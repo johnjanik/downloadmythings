@@ -3,60 +3,26 @@
 <head>
   <meta charset="utf-8">
   <title>DownloadMyThings Settings</title>
+  <link rel="stylesheet" href="theme.css">
   <style>
-    :root {
-      --bg-body: #ffffff;
-      --text-primary: #333333;
-      --text-secondary: #666666;
-      --border-color: #dddddd;
-      --primary-color: #5436DA;
-      --primary-hover: #4329B8;
-      --section-bg: #f8f9fa;
-      --success-bg: #d4edda;
-      --success-text: #155724;
-      --error-bg: #f8d7da;
-      --error-text: #721c24;
-      --info-bg: #e8f4fd;
-      --code-bg: #ffffff;
-      --link-color: #5436DA;
-    }
-
-    @media (prefers-color-scheme: dark) {
-      :root {
-        --bg-body: #1e1e1e;
-        --text-primary: #e0e0e0;
-        --text-secondary: #b0b0b0;
-        --border-color: #3a3a3a;
-        --primary-color: #6b52e8;
-        --primary-hover: #7d66f0;
-        --section-bg: #2a2a2a;
-        --success-bg: #1a4d2e;
-        --success-text: #90ee90;
-        --error-bg: #4d1a1a;
-        --error-text: #ff9999;
-        --info-bg: #1a3d4d;
-        --code-bg: #2a2a2a;
-        --link-color: #8b7aff;
-      }
-    }
-
     body {
       width: 810px;
       margin: 40px auto;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-family: var(--font-ui);
       line-height: 1.6;
       color: var(--text-primary);
       background-color: var(--bg-body);
     }
     h1 {
-      color: var(--primary-color);
-      border-bottom: 2px solid var(--primary-color);
+      color: var(--text-primary);
+      border-bottom: 1px solid var(--primary-color);
       padding-bottom: 10px;
     }
     .section {
       background: var(--section-bg);
+      border: var(--hairline) solid var(--border-light);
       padding: 20px;
-      border-radius: 8px;
+      border-radius: var(--radius-card);
       margin: 20px 0;
     }
     label {
@@ -78,7 +44,7 @@
     input[type="text"]:focus {
       outline: none;
       border-color: var(--primary-color);
-      box-shadow: 0 0 0 2px rgba(107, 82, 232, 0.15);
+      box-shadow: 0 0 0 3px var(--focus-ring);
     }
     select {
       width: 100%;
@@ -92,11 +58,12 @@
     }
     button {
       background: var(--primary-color);
-      color: white;
+      color: var(--on-primary);
       border: none;
-      padding: 8px 10px;
-      border-radius: 5px;
+      padding: 8px 12px;
+      border-radius: var(--radius-control);
       font-size: 14px;
+      font-weight: 600;
       cursor: pointer;
       margin-top: 10px;
       display: inline-flex;
@@ -303,6 +270,7 @@
     <div id="contactStatus" class="status"></div>
   </div>
 
+  <script src="theme.js"></script>
   <script src="lib/utils.js"></script>
   <script src="lib/store.js"></script>
   <script src="lib/api.js"></script>

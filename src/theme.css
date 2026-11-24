@@ -1,0 +1,224 @@
+/* DownloadMyThings theme: PracticallyZen design tokens.
+ *
+ * The values come from the PracticallyZen "Liquid Glass" design reference:
+ * a near-black ground, a mint accent, SF system type, hairline borders and
+ * rounded glass surfaces. Every page links this file and reads its colours
+ * from the variables below; no page defines colours of its own.
+ *
+ * Dark is the default. Light follows the reference's light Settings row and
+ * applies when the system prefers light or the user picks it (data-theme).
+ */
+
+:root {
+  /* ---- Reference tokens, exactly as in the design file ---- */
+  --pz-ground: #0B0D0E;
+  --pz-ground-top: #14191B;
+  --pz-ground-bottom: #050607;
+  --pz-surface: #1C1C1E;
+  --pz-mint: #9ED6C2;
+  --pz-mint-bright: #C6EBDD;
+  --pz-mint-light: #D8F3EA;
+  --pz-mint-mid: #8EC2AF;
+  --pz-mint-deep: #5F8E7E;
+  --pz-light-ground: #F2F2F7;
+  --pz-light-text: #1C1C1E;
+  --pz-light-text-secondary: #6C6C70;
+  /* One shade the reference does not have: mint dark enough to read as text
+     and to carry white text on a light ground (5.8:1 on white). */
+  --pz-mint-ink: #3F6E5F;
+
+  /* ---- Type and shape ---- */
+  --font-ui: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
+  --radius-card: 16px;
+  --radius-control: 10px;
+  --hairline: 0.5px;
+  --glass-blur: saturate(160%) blur(18px);
+
+  /* The brand band (popup header): the icon's ground with a mint glow.
+     It stays dark in both themes, so its text colours are fixed. */
+  --ground-gradient: linear-gradient(160deg, var(--pz-ground-top), var(--pz-ground-bottom));
+  --glow: radial-gradient(120% 90% at 50% 0%, rgba(158, 214, 194, 0.26), transparent 62%);
+  --header-text: rgba(255, 255, 255, 0.92);
+  --header-text-muted: rgba(255, 255, 255, 0.55);
+
+  /* ---- Dark (default) ---- */
+  --bg-body: var(--pz-ground);
+  --bg-color: var(--pz-ground);
+  --bg-card: var(--pz-surface);
+  --bg-header: rgba(11, 13, 14, 0.72);
+  --section-bg: var(--pz-surface);
+  --secondary-bg: rgba(255, 255, 255, 0.04);
+  --hover-bg: rgba(255, 255, 255, 0.06);
+  --code-bg: rgba(255, 255, 255, 0.07);
+
+  --text-primary: rgba(255, 255, 255, 0.92);
+  --text-color: rgba(255, 255, 255, 0.92);
+  --text-secondary: rgba(255, 255, 255, 0.70);
+  --text-muted: rgba(255, 255, 255, 0.55);
+
+  --border-color: rgba(255, 255, 255, 0.14);
+  --border-light: rgba(255, 255, 255, 0.07);
+  --input-border: rgba(255, 255, 255, 0.16);
+  --input-focus: var(--pz-mint);
+  --focus-ring: rgba(158, 214, 194, 0.28);
+
+  --primary-color: var(--pz-mint);
+  --primary-hover: var(--pz-mint-bright);
+  --on-primary: var(--pz-ground);
+  --secondary-color: rgba(255, 255, 255, 0.08);
+  --secondary-hover: rgba(255, 255, 255, 0.14);
+  --link-color: var(--pz-mint);
+  --link-hover: var(--pz-mint-bright);
+
+  --disabled-bg: rgba(255, 255, 255, 0.10);
+  --disabled-text: rgba(255, 255, 255, 0.40);
+  --shadow-sm: rgba(0, 0, 0, 0.35);
+  --shadow-md: rgba(0, 0, 0, 0.55);
+  --toast-bg: #26292B;
+  --modal-overlay: rgba(0, 0, 0, 0.70);
+  --progress-bg: rgba(255, 255, 255, 0.10);
+
+  --success-bg: rgba(158, 214, 194, 0.14);
+  --success-text: var(--pz-mint-bright);
+  --info-bg: rgba(255, 255, 255, 0.07);
+  --info-text: rgba(255, 255, 255, 0.80);
+  --error-bg: rgba(255, 107, 107, 0.14);
+  --error-text: #FF9C9C;
+  --error-color: #FF6B6B;
+  --cancel-btn: #E74C3C;
+
+  /* Model family badges keep their own hues so families stay distinguishable */
+  --badge-default: #F0708A;
+  --badge-fable: #7AB8F5;
+  --badge-sonnet: #FFAA66;
+  --badge-haiku: #66CC66;
+  --badge-opus: #C084CC;
+
+  color-scheme: dark;
+}
+
+/* ---- Light: when the system prefers it and the user has not chosen dark ---- */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg-body: var(--pz-light-ground);
+    --bg-color: var(--pz-light-ground);
+    --bg-card: #FFFFFF;
+    --bg-header: rgba(242, 242, 247, 0.80);
+    --section-bg: #FFFFFF;
+    --secondary-bg: rgba(28, 28, 30, 0.03);
+    --hover-bg: rgba(28, 28, 30, 0.05);
+    --code-bg: rgba(28, 28, 30, 0.06);
+
+    --text-primary: var(--pz-light-text);
+    --text-color: var(--pz-light-text);
+    --text-secondary: var(--pz-light-text-secondary);
+    --text-muted: rgba(28, 28, 30, 0.50);
+
+    --border-color: rgba(28, 28, 30, 0.16);
+    --border-light: rgba(28, 28, 30, 0.08);
+    --input-border: rgba(28, 28, 30, 0.20);
+    --input-focus: var(--pz-mint-ink);
+    --focus-ring: rgba(95, 142, 126, 0.28);
+
+    --primary-color: var(--pz-mint-ink);
+    --primary-hover: var(--pz-mint-deep);
+    --on-primary: #FFFFFF;
+    --secondary-color: rgba(28, 28, 30, 0.06);
+    --secondary-hover: rgba(28, 28, 30, 0.12);
+    --link-color: var(--pz-mint-ink);
+    --link-hover: var(--pz-mint-deep);
+
+    --disabled-bg: rgba(28, 28, 30, 0.12);
+    --disabled-text: rgba(28, 28, 30, 0.40);
+    --shadow-sm: rgba(0, 0, 0, 0.06);
+    --shadow-md: rgba(0, 0, 0, 0.16);
+    --toast-bg: var(--pz-surface);
+    --modal-overlay: rgba(0, 0, 0, 0.45);
+    --progress-bg: rgba(28, 28, 30, 0.12);
+
+    --success-bg: rgba(95, 142, 126, 0.16);
+    --success-text: var(--pz-mint-ink);
+    --info-bg: rgba(28, 28, 30, 0.06);
+    --info-text: var(--pz-light-text);
+    --error-bg: #FEE2E2;
+    --error-text: #991B1B;
+    --error-color: #D32F2F;
+    --cancel-btn: #DC3545;
+
+    --badge-default: #A81F3D;
+    --badge-fable: #1D4ED8;
+    --badge-sonnet: #CE5C04;
+    --badge-haiku: #09923B;
+    --badge-opus: #7C3AED;
+
+    color-scheme: light;
+  }
+}
+
+/* ---- Light: chosen by the user. Keep in step with the block above. ---- */
+:root[data-theme="light"] {
+  --bg-body: var(--pz-light-ground);
+  --bg-color: var(--pz-light-ground);
+  --bg-card: #FFFFFF;
+  --bg-header: rgba(242, 242, 247, 0.80);
+  --section-bg: #FFFFFF;
+  --secondary-bg: rgba(28, 28, 30, 0.03);
+  --hover-bg: rgba(28, 28, 30, 0.05);
+  --code-bg: rgba(28, 28, 30, 0.06);
+
+  --text-primary: var(--pz-light-text);
+  --text-color: var(--pz-light-text);
+  --text-secondary: var(--pz-light-text-secondary);
+  --text-muted: rgba(28, 28, 30, 0.50);
+
+  --border-color: rgba(28, 28, 30, 0.16);
+  --border-light: rgba(28, 28, 30, 0.08);
+  --input-border: rgba(28, 28, 30, 0.20);
+  --input-focus: var(--pz-mint-ink);
+  --focus-ring: rgba(95, 142, 126, 0.28);
+
+  --primary-color: var(--pz-mint-ink);
+  --primary-hover: var(--pz-mint-deep);
+  --on-primary: #FFFFFF;
+  --secondary-color: rgba(28, 28, 30, 0.06);
+  --secondary-hover: rgba(28, 28, 30, 0.12);
+  --link-color: var(--pz-mint-ink);
+  --link-hover: var(--pz-mint-deep);
+
+  --disabled-bg: rgba(28, 28, 30, 0.12);
+  --disabled-text: rgba(28, 28, 30, 0.40);
+  --shadow-sm: rgba(0, 0, 0, 0.06);
+  --shadow-md: rgba(0, 0, 0, 0.16);
+  --toast-bg: var(--pz-surface);
+  --modal-overlay: rgba(0, 0, 0, 0.45);
+  --progress-bg: rgba(28, 28, 30, 0.12);
+
+  --success-bg: rgba(95, 142, 126, 0.16);
+  --success-text: var(--pz-mint-ink);
+  --info-bg: rgba(28, 28, 30, 0.06);
+  --info-text: var(--pz-light-text);
+  --error-bg: #FEE2E2;
+  --error-text: #991B1B;
+  --error-color: #D32F2F;
+  --cancel-btn: #DC3545;
+
+  --badge-default: #A81F3D;
+  --badge-fable: #1D4ED8;
+  --badge-sonnet: #CE5C04;
+  --badge-haiku: #09923B;
+  --badge-opus: #7C3AED;
+
+  color-scheme: light;
+}
+
+/* Links and form controls pick up the accent everywhere */
+a {
+  color: var(--link-color);
+}
+a:hover {
+  color: var(--link-hover);
+}
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: var(--primary-color);
+}
