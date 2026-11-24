@@ -99,7 +99,15 @@ async function recordModelSnapshots(conversations) {
 async function startPrintJob(job) {
   await storageSet('local', { printJob: { ...job, createdAt: new Date().toISOString() } });
   await new Promise((resolve) => {
-    chrome.tabs.create({ url: chrome.runtime.getURL('print.html') }, () => resolve());
+    if (chrome.tabs && chrome.tabs.create) {
+      chrome.tabs.create({ url: chrome.runtime.getURL('print.html') }, () => resolve());
+    } else {
+      // Content scripts cannot open tabs; the background script does it for them
+      chrome.runtime.sendMessage({ action: 'openPrintPage' }, () => {
+        void chrome.runtime.lastError;
+        resolve();
+      });
+    }
   });
 }
 

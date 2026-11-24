@@ -81,6 +81,19 @@ function readExportOptions() {
   };
 }
 
+// Put saved options back into the controls
+function applyExportOptions(saved) {
+  if (!saved) return;
+  for (const id of ['format', 'artifactFormat']) {
+    const select = document.getElementById(id);
+    const value = id === 'format' ? saved.format : saved.artifactFormat;
+    if (value && select.querySelector(`option[value="${CSS.escape(value)}"]`)) select.value = value;
+  }
+  for (const id of ['includeChats', 'includeThinking', 'includeMetadata', 'includeAttachments', 'includeArtifacts', 'extractArtifacts', 'flattenArtifacts']) {
+    if (typeof saved[id] === 'boolean') document.getElementById(id).checked = saved[id];
+  }
+}
+
 var ORG_ID_MISSING = 'Could not find your organization ID.';
 
 // Show a status line. Built from text nodes only, never from HTML strings.
@@ -131,6 +144,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
   includeChatsCheckbox.addEventListener('change', updateCheckboxStates);
   updateCheckboxStates();
+
+  // Remember the options between visits. The download button on claude.ai
+  // pages (page-button.js) exports with the same options.
+  storageGet('local', ['exportOptions']).then((stored) => {
+    applyExportOptions(stored.exportOptions);
+    updateCheckboxStates();
+  });
+  document.querySelector('.options').addEventListener('change', () => {
+    storageSet('local', { exportOptions: readExportOptions() });
+  });
 });
 
 // Run one export button: disable it, show progress, report the outcome.
