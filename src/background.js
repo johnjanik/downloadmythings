@@ -1,7 +1,8 @@
 // Background script: a service worker on Chrome (Manifest V3) and a background
 // page on Firefox (Manifest V2). It puts the content scripts into claude.ai
-// tabs that do not have a live copy, and opens the print page when a content
-// script asks for it.
+// tabs that do not have a live copy, opens the print page when a content
+// script asks for it, and makes the toolbar button open the panel as a side
+// panel or a popup.
 
 // Same files, same order, as the manifest declares for claude.ai.
 function contentScriptFiles() {
@@ -37,6 +38,49 @@ chrome.runtime.onInstalled.addListener(() => {
     });
   });
 });
+
+// ---- Side panel or popup -----------------------------------------------
+// The toolbar button opens the panel page either as the browser's side panel
+// or as a popup. The choice is stored as `displayMode`; side panel is the
+// default where the browser has one.
+
+function toolbarButton() {
+  return chrome.action || chrome.browserAction;
+}
+
+function firefoxSidebar() {
+  return typeof browser !== 'undefined' && browser.sidebarAction ? browser.sidebarAction : null;
+}
+
+function applyDisplayMode() {
+  chrome.storage.local.get(['displayMode'], (result) => {
+    const canSidePanel = Boolean(chrome.sidePanel && chrome.sidePanel.setPanelBehavior) || Boolean(firefoxSidebar());
+    const useSidePanel = canSidePanel && (result || {}).displayMode !== 'popup';
+
+    // With no popup set, a click on the toolbar button goes to the side panel
+    toolbarButton().setPopup({ popup: useSidePanel ? '' : 'panel.html' });
+    if (chrome.sidePanel && chrome.sidePanel.setPanelBehavior) {
+      chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: useSidePanel }).catch((error) => {
+        console.log('Could not set the side panel behaviour:', error);
+      });
+    }
+  });
+}
+
+chrome.runtime.onInstalled.addListener(applyDisplayMode);
+chrome.runtime.onStartup.addListener(applyDisplayMode);
+applyDisplayMode(); // and whenever the background script itself starts
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && changes.displayMode) applyDisplayMode();
+});
+
+// Firefox has no "open the sidebar on click" setting: do it by hand. This
+// only fires while no popup is set, which is side panel mode.
+if (firefoxSidebar() && toolbarButton().onClicked) {
+  toolbarButton().onClicked.addListener(() => {
+    firefoxSidebar().toggle();
+  });
+}
 
 // The popup asks for this when a claude.ai tab does not answer its message.
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {

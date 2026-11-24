@@ -51,6 +51,8 @@ function manifestFiles(manifest) {
     ...(manifest.background.scripts || []),
     manifest.options_page,
     manifest.options_ui && manifest.options_ui.page,
+    manifest.side_panel && manifest.side_panel.default_path,
+    manifest.sidebar_action && manifest.sidebar_action.default_panel,
   ].filter(Boolean);
 }
 

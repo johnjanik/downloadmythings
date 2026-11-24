@@ -72,6 +72,16 @@ function fidelityFilename(name, fidelity, mediaType, usedNames) {
   return uniqueFilename(base, ext, usedNames);
 }
 
+// For the "Markdown" file format: the .md name a file's text is saved under,
+// or null when the file should keep its own format (code, data, images).
+function markdownFilename(name, usedNames) {
+  const safe = sanitizeFilename(name);
+  const { base, ext } = splitExtension(safe);
+  if (isBinaryFilename(name)) return uniqueFilename(safe, 'md', usedNames); // notes.docx -> notes.docx.md
+  if (['', 'txt', 'text', 'md', 'markdown'].includes(ext.toLowerCase())) return uniqueFilename(base, 'md', usedNames);
+  return null;
+}
+
 // Get one file's content. `item` is { name, file, text }: `file` is an API file
 // entry (bytes are downloaded), `text` is extracted or pasted text (the
 // fallback, or the whole content when there is no file). `folder` is where the
@@ -82,6 +92,21 @@ async function fetchFileItem(orgId, item, usedNames, folder) {
   let content = null;
   let mediaType = null;
   const attempts = [];
+
+  // Markdown chosen in the export settings: where claude.ai holds the file's
+  // text, save that as .md instead of downloading the file.
+  if (item.preferText && typeof item.text === 'string' && item.text.length > 0) {
+    const markdownName = markdownFilename(item.name, usedNames);
+    if (markdownName) {
+      record.fidelity = isBinaryFilename(item.name) ? 'extracted-text' : 'original';
+      record.source = item.textSource || 'docs';
+      record.note = 'Saved as Markdown, as chosen in the export settings';
+      record.path = `${folder}${markdownName}`;
+      record.bytes = contentByteLength(item.text);
+      record.sha256 = await sha256Hex(item.text);
+      return { content: item.text, record };
+    }
+  }
 
   if (item.file) {
     for (const candidate of fileDownloadCandidates(orgId, item.file)) {
@@ -172,6 +197,7 @@ if (typeof module !== 'undefined' && module.exports) {
     contentByteLength,
     sha256Hex,
     fidelityFilename,
+    markdownFilename,
     fetchFileItem,
     listConversationAttachments,
     collectAttachmentEntries,

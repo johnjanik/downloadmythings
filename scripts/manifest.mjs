@@ -9,6 +9,7 @@ export const TARGETS = ['chrome', 'firefox'];
 export const FIREFOX_ADDON_ID = '{a419207e-b68e-4339-a2d2-dd10cca238bd}';
 
 const CLAUDE_HOST = 'https://claude.ai/*';
+const PANEL_PAGE = 'panel.html';
 
 const ICONS = {
   16: 'icons/icon16.png',
@@ -34,21 +35,24 @@ export function buildManifest(target, version) {
   const shared = {
     name: 'DownloadMyThings',
     version,
-    description: 'Export your conversations and artifacts from claude.ai. Free, local and open source.',
+    description: 'Download your projects, chats and files from claude.ai. Free, local and open source.',
     icons: ICONS,
     content_scripts: [
       { matches: [CLAUDE_HOST], js: CONTENT_SCRIPTS },
     ],
   };
-  const toolbarButton = { default_popup: 'popup.html', default_icon: ICONS };
+  // The panel page is the toolbar popup and, where the browser has one, the
+  // side panel. background.js switches between the two (see applyDisplayMode).
+  const toolbarButton = { default_popup: PANEL_PAGE, default_icon: ICONS };
 
   if (target === 'chrome') {
     return {
       manifest_version: 3,
       ...shared,
-      permissions: ['activeTab', 'storage', 'scripting', 'tabs'],
+      permissions: ['activeTab', 'storage', 'scripting', 'tabs', 'sidePanel'],
       host_permissions: [CLAUDE_HOST],
       action: toolbarButton,
+      side_panel: { default_path: PANEL_PAGE },
       background: { service_worker: 'background.js' },
       options_page: 'options.html',
     };
@@ -60,6 +64,12 @@ export function buildManifest(target, version) {
       ...shared,
       permissions: ['activeTab', 'storage', 'tabs', CLAUDE_HOST],
       browser_action: toolbarButton,
+      sidebar_action: {
+        default_title: 'DownloadMyThings',
+        default_panel: PANEL_PAGE,
+        default_icon: ICONS,
+        open_at_install: false,
+      },
       background: { scripts: ['background.js'] },
       options_ui: { page: 'options.html', open_in_tab: true },
       browser_specific_settings: {

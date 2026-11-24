@@ -33,7 +33,7 @@ describe('manifests', () => {
   });
 
   it('asks for no permission beyond the known set', () => {
-    expect(chrome.permissions).toEqual(['activeTab', 'storage', 'scripting', 'tabs']);
+    expect(chrome.permissions).toEqual(['activeTab', 'storage', 'scripting', 'tabs', 'sidePanel']);
     expect(firefox.permissions).toEqual(['activeTab', 'storage', 'tabs', 'https://claude.ai/*']);
   });
 
@@ -58,6 +58,14 @@ describe('manifests', () => {
     for (const file of CONTENT_SCRIPTS) {
       expect(existsSync(path.join(srcDir, file)), file).toBe(true);
     }
+  });
+
+  it('offers the same panel page as popup and as side panel in both browsers', () => {
+    expect(chrome.action.default_popup).toBe('panel.html');
+    expect(chrome.side_panel).toEqual({ default_path: 'panel.html' });
+    expect(firefox.browser_action.default_popup).toBe('panel.html');
+    expect(firefox.sidebar_action.default_panel).toBe('panel.html');
+    expect(firefox.sidebar_action.open_at_install).toBe(false);
   });
 
   it('rejects an unknown browser', () => {
