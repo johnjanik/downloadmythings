@@ -571,6 +571,7 @@ function readExportOptions() {
     includeChats: document.getElementById('includeChats').checked,
     includeThinking: document.getElementById('includeThinking').checked,
     includeMetadata: document.getElementById('includeMetadata').checked,
+    includeAttachments: document.getElementById('includeAttachments').checked,
     includeArtifacts: document.getElementById('includeArtifacts').checked,
     extractArtifacts: document.getElementById('extractArtifacts').checked,
     artifactFormat: document.getElementById('artifactFormat').value,
@@ -591,9 +592,11 @@ async function exportConversation(conversationId, conversationName) {
     showToast(`Exporting ${conversationName}...`);
     const result = await exportConversationToFile(orgId, conversationId, readExportOptions(), conversationName);
     await refreshAfterExport();
-    showToast(result.artifactCount > 0
-      ? `Exported: ${conversationName} with ${result.artifactCount} artifact(s)`
-      : `Exported: ${conversationName}`);
+    const extras = [];
+    if (result.artifactCount > 0) extras.push(`${result.artifactCount} artifact(s)`);
+    if (result.attachments.saved > 0) extras.push(`${result.attachments.saved} attachment(s)`);
+    const missing = result.attachments.missing > 0 ? ` (${result.attachments.missing} attachment(s) could not be downloaded)` : '';
+    showToast(`Exported: ${conversationName}${extras.length ? ` with ${extras.join(' and ')}` : ''}${missing}`, Boolean(missing), missing ? 8000 : 3000);
   } catch (error) {
     console.error('Export error:', error);
     showToast(`Failed to export: ${error.message}`, true);
@@ -664,10 +667,13 @@ async function exportAllFiltered() {
 
     if (result.included === 0) {
       showToast('No artifacts found, so nothing was downloaded.', true);
-    } else if (result.failed > 0) {
-      showToast(`Exported ${result.completed} of ${result.total} conversations (${result.failed} failed).`);
     } else {
-      showToast(`Successfully exported all ${result.completed} conversations!`);
+      const attachments = result.attachments.saved > 0 ? `, with ${result.attachments.saved} attachment(s)` : '';
+      const missing = result.attachments.missing > 0 ? ` ${result.attachments.missing} attachment(s) could not be downloaded; see attachments.json.` : '';
+      const headline = result.failed > 0
+        ? `Exported ${result.completed} of ${result.total} conversations (${result.failed} failed)`
+        : `Successfully exported all ${result.completed} conversations`;
+      showToast(`${headline}${attachments}.${missing}`, Boolean(missing), missing ? 8000 : 3000);
     }
   } catch (error) {
     console.error('Export error:', error);

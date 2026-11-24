@@ -1,20 +1,19 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import projects from '../src/lib/projects.js';
+import files from '../src/lib/files.js';
 import api from '../src/lib/api.js';
 
 const {
   projectIdOf,
-  splitExtension,
-  isBinaryFilename,
   mergeProjectKnowledge,
-  sha256Hex,
-  knowledgeFilename,
-  fetchKnowledgeItem,
   collectProject,
   summarizeProjectManifests,
   describeProjectExport,
   projectZipFilename,
 } = projects;
+const { splitExtension, isBinaryFilename, sha256Hex, fidelityFilename, fetchFileItem, listConversationAttachments } = files;
+const knowledgeFilename = fidelityFilename;
+const fetchKnowledgeItem = (orgId, item, usedNames) => fetchFileItem(orgId, item, usedNames, 'files/');
 const { fileDownloadCandidates, apiGetBlob } = api;
 
 const ORG = 'org-1';
@@ -272,6 +271,19 @@ describe('collectProject', () => {
     expect(saved.fidelityLegend.missing).toBeTruthy();
   });
 
+  it('saves chat attachments beside the chats when asked', async () => {
+    const withUpload = routes();
+    const chatWithUpload = { ...chat, chat_messages: [{ ...chat.chat_messages[0], files: [{ file_uuid: 'f-9', file_name: 'photo.png' }] }, chat.chat_messages[1]] };
+    withUpload['/api/organizations/org-1/chat_conversations/c-1'] = json(chatWithUpload);
+    withUpload['/api/organizations/org-1/files/f-9/contents'] = bytes('PNGDATA', 'image/png');
+    stubClaude(withUpload);
+
+    const { entries, manifest } = await collectProject(ORG, project, conversations, { includeKnowledge: false, includeInstructions: false, includeAttachments: true }, '');
+    expect(paths(entries)).toEqual(['attachments/Kickoff/photo.png', 'chats/Kickoff.json', 'manifest.json']);
+    expect(manifest.chats[0].attachments.map((r) => [r.path, r.fidelity])).toEqual([['attachments/Kickoff/photo.png', 'original']]);
+    expect(describeProjectExport(summarizeProjectManifests([manifest]))).toBe('1 project: 1 chat, 1 attachment');
+  });
+
   it('honours the per-part switches', async () => {
     const requested = stubClaude(routes());
     const { entries } = await collectProject(ORG, project, conversations, { includeKnowledge: false, includeProjectChats: false }, '');
@@ -291,6 +303,47 @@ describe('collectProject', () => {
   });
 });
 
+describe('conversation attachments', () => {
+  const data = {
+    chat_messages: [
+      {
+        uuid: 'm-1',
+        files: [{ file_uuid: 'f-1', file_name: 'photo.png', file_kind: 'image' }],
+        files_v2: [{ file_uuid: 'f-1', file_name: 'photo.png', file_kind: 'image' }], // the same upload, listed twice
+        attachments: [{ file_name: 'notes.txt', extracted_content: 'pasted words' }, { file_name: '', extracted_content: 'more words' }],
+      },
+      { uuid: 'm-2', files: [{ file_uuid: 'f-2', file_name: 'report.pdf', file_kind: 'document' }], attachments: [{ file_name: 'empty.txt', extracted_content: '' }] },
+      { uuid: 'm-3' },
+    ],
+  };
+
+  it('lists each upload once and names unnamed pasted text', () => {
+    expect(listConversationAttachments(data).map((i) => [i.name, Boolean(i.file), i.text])).toEqual([
+      ['photo.png', true, null],
+      ['notes.txt', false, 'pasted words'],
+      ['pasted-2.txt', false, 'more words'],
+      ['report.pdf', true, null],
+    ]);
+  });
+
+  it('tolerates a conversation with no messages', () => {
+    expect(listConversationAttachments({})).toEqual([]);
+    expect(listConversationAttachments(null)).toEqual([]);
+  });
+
+  it('downloads uploads and saves pasted text, recording what could not be fetched', async () => {
+    stubClaude({ '/api/organizations/org-1/files/f-1/contents': bytes('PNGDATA', 'image/png') });
+    const { entries, records } = await files.collectAttachmentEntries(ORG, data, 'attachments/');
+    expect(entries.map((e) => e.path)).toEqual(['attachments/photo.png', 'attachments/notes.txt', 'attachments/pasted-2.txt']);
+    expect(records.map((r) => [r.name, r.fidelity, r.source])).toEqual([
+      ['photo.png', 'original', 'contents'],
+      ['notes.txt', 'original', 'attachment'],
+      ['pasted-2.txt', 'original', 'attachment'],
+      ['report.pdf', 'missing', null],
+    ]);
+  });
+});
+
 describe('summary line', () => {
   const manifests = [
     { instructions: {}, chats: [{}, {}], failures: [], knowledge: [{ fidelity: 'original' }, { fidelity: 'original' }, { fidelity: 'extracted-text' }] },
@@ -303,6 +356,8 @@ describe('summary line', () => {
       knowledge: 4,
       byFidelity: { 'original': 2, 'extracted-text': 1, 'missing': 1 },
       chats: 3,
+      attachments: 0,
+      attachmentsMissing: 0,
       failures: 1,
       hasInstructions: 1,
     });

@@ -7,7 +7,7 @@
 // Plain script, no modules: function declarations and `var` only (see store.js).
 
 if (typeof module !== 'undefined' && module.exports && typeof convertToMarkdown === 'undefined') {
-  Object.assign(globalThis, require('./utils.js'), require('./store.js'), require('./api.js'));
+  Object.assign(globalThis, require('./utils.js'), require('./store.js'), require('./api.js'), require('./files.js'));
 }
 
 var DMT_BULK_BATCH_SIZE = 3;      // conversations fetched in parallel
@@ -30,17 +30,18 @@ function normalizeExportOptions(options) {
     includeArtifacts: Boolean(o.includeArtifacts),
     extractArtifacts: Boolean(o.extractArtifacts),   // artifacts as files in nested folders
     flattenArtifacts: Boolean(o.flattenArtifacts),   // artifacts as files in one flat folder
-    artifactFormat: o.artifactFormat || 'original'
+    artifactFormat: o.artifactFormat || 'original',
+    includeAttachments: Boolean(o.includeAttachments) // uploads and pasted text as files
   };
 }
 
 // True when the options cannot produce any file at all.
 function isNothingToExport(options) {
   const o = normalizeExportOptions(options);
-  return !o.includeChats && !o.extractArtifacts && !o.flattenArtifacts;
+  return !o.includeChats && !o.extractArtifacts && !o.flattenArtifacts && !o.includeAttachments;
 }
 
-var DMT_NOTHING_TO_EXPORT = 'Nothing to export. Enable "Chats" or one of the artifact file options.';
+var DMT_NOTHING_TO_EXPORT = 'Nothing to export. Enable "Chats", "Attachments" or one of the artifact file options.';
 
 // The conversation transcript in the chosen format.
 function renderConversation(data, conversationId, options) {
@@ -106,12 +107,18 @@ function buildConversationExport(data, conversationId, options, displayName) {
 // conversation has nothing to add (chats off and no artifacts). `usedNames`
 // is a Set shared across the whole export so same-titled chats do not collide.
 function buildBulkEntries(data, conv, options, usedNames) {
+  return planBulkConversation(data, conv, options, usedNames).entries;
+}
+
+// As buildBulkEntries, and also returns the unique name the conversation was
+// filed under (null when it added nothing), so attachments can sit beside it.
+function planBulkConversation(data, conv, options, usedNames) {
   const o = normalizeExportOptions(options);
-  if (isNothingToExport(o)) return [];
+  if (isNothingToExport(o)) return { name: null, entries: [] };
 
   const wantsArtifactFiles = o.extractArtifacts || o.flattenArtifacts;
   const artifactFiles = wantsArtifactFiles ? extractArtifactFiles(data, o.artifactFormat) : [];
-  if (!o.includeChats && artifactFiles.length === 0) return [];
+  if (!o.includeChats && artifactFiles.length === 0) return { name: null, entries: [] };
 
   const safeName = uniqueFilename(sanitizeFilename(conv.name || conv.uuid), '', usedNames);
   const entries = [];
@@ -132,7 +139,21 @@ function buildBulkEntries(data, conv, options, usedNames) {
   } else {
     entries.push({ path: `${safeName}.${rendered.ext}`, content: rendered.content });
   }
-  return entries;
+  return { name: safeName, entries };
+}
+
+// Where a conversation's attachments go inside a bulk ZIP, matching the
+// artifact layout in use. The result is a path prefix, not always a folder.
+function bulkAttachmentPrefix(options, name) {
+  const o = normalizeExportOptions(options);
+  if (o.extractArtifacts) return `${name}/attachments/`;   // nested: inside the conversation's folder
+  if (o.flattenArtifacts) return `Attachments/${name}_`;   // flat: one shared folder, name as prefix
+  return `attachments/${name}/`;
+}
+
+function countAttachmentRecords(records) {
+  const missing = records.filter((record) => record.fidelity === 'missing').length;
+  return { saved: records.length - missing, missing };
 }
 
 function bulkZipFilename(options, now) {
@@ -162,7 +183,30 @@ async function exportConversationToFile(orgId, conversationId, options, displayN
   }
   data.model = inferModel(data);
 
-  const result = buildConversationExport(data, conversationId, options, displayName);
+  let result = buildConversationExport(data, conversationId, options, displayName);
+  let attachments = { saved: 0, missing: 0 };
+
+  if (normalizeExportOptions(options).includeAttachments) {
+    const collected = await collectAttachmentEntries(orgId, data, 'attachments/');
+    attachments = countAttachmentRecords(collected.records);
+    if (collected.records.length > 0) {
+      // Attachments turn the export into a ZIP: transcript, artifacts, attachments
+      const safeName = sanitizeFilename(displayName || data.name || conversationId);
+      const base = result.kind === 'zip'
+        ? result.entries
+        : (result.kind === 'file' ? [{ path: result.filename, content: result.content }] : []);
+      result = {
+        kind: 'zip',
+        filename: `${safeName}.zip`,
+        entries: [
+          ...base,
+          ...collected.entries,
+          { path: 'attachments.json', content: JSON.stringify(collected.records, null, 2) }
+        ],
+        artifactCount: result.artifactCount || 0
+      };
+    }
+  }
   if (result.kind === 'empty') throw new Error(result.error);
 
   if (result.kind === 'zip') {
@@ -171,7 +215,7 @@ async function exportConversationToFile(orgId, conversationId, options, displayN
     downloadFile(result.content, result.filename, result.type);
   }
   await recordExportTimestamps([conversationId]);
-  return { filename: result.filename, artifactCount: result.artifactCount };
+  return { filename: result.filename, artifactCount: result.artifactCount, attachments };
 }
 
 // Fetch many conversations and download them as one ZIP.
@@ -189,22 +233,39 @@ async function exportConversationsToZip(orgId, conversations, options, hooks) {
   const usedNames = new Set();
   const exportedIds = [];
   const failures = [];
+  const attachmentRecords = [];
+  const wantsAttachments = normalizeExportOptions(options).includeAttachments;
   let completed = 0;
   let included = 0;
 
   const summary = (extra) => ({
-    total, completed, failed: failures.length, included, failures, cancelled: false, filename: null, ...extra
+    total, completed, failed: failures.length, included, failures, cancelled: false, filename: null,
+    attachments: countAttachmentRecords(attachmentRecords), ...extra
   });
 
   for (let i = 0; i < total; i += DMT_BULK_BATCH_SIZE) {
     if (isCancelled()) return summary({ cancelled: true });
 
+    // Fetch a batch in parallel, then file its conversations in list order so
+    // the names given to same-titled chats do not depend on network timing.
     const batch = conversations.slice(i, i + DMT_BULK_BATCH_SIZE);
-    await Promise.all(batch.map(async (conv) => {
+    const fetched = await Promise.all(batch.map((conv) => getConversation(orgId, conv.uuid).then(
+      (data) => ({ conv, data }),
+      (error) => ({ conv, error })
+    )));
+
+    for (const { conv, data, error: fetchError } of fetched) {
       try {
-        const data = await getConversation(orgId, conv.uuid);
+        if (fetchError) throw fetchError;
         data.model = inferModel(data);
-        const convEntries = buildBulkEntries(data, conv, options, usedNames);
+        const plan = planBulkConversation(data, conv, options, usedNames);
+        const convEntries = plan.entries;
+        if (wantsAttachments && listConversationAttachments(data).length > 0) {
+          const name = plan.name || uniqueFilename(sanitizeFilename(conv.name || conv.uuid), '', usedNames);
+          const collected = await collectAttachmentEntries(orgId, data, bulkAttachmentPrefix(options, name));
+          convEntries.push(...collected.entries);
+          attachmentRecords.push(...collected.records.map((record) => ({ conversation: conv.name || conv.uuid, ...record })));
+        }
         entries.push(...convEntries);
         if (convEntries.length > 0) included++;
         exportedIds.push(conv.uuid);
@@ -213,7 +274,7 @@ async function exportConversationsToZip(orgId, conversations, options, hooks) {
         console.error(`Failed to export ${conv.name || conv.uuid}:`, error);
         failures.push({ id: conv.uuid, name: conv.name || conv.uuid, message: error.message });
       }
-    }));
+    }
 
     report({ phase: 'fetch', completed, failed: failures.length, total });
 
@@ -225,6 +286,9 @@ async function exportConversationsToZip(orgId, conversations, options, hooks) {
   if (isCancelled()) return summary({ cancelled: true });
   if (included === 0) return summary();
 
+  if (attachmentRecords.length > 0) {
+    entries.push({ path: 'attachments.json', content: JSON.stringify(attachmentRecords, null, 2) });
+  }
   const blob = await zipEntries(entries, (percent) => {
     report({ phase: 'zip', percent, completed, failed: failures.length, total });
   });
@@ -248,6 +312,9 @@ if (typeof module !== 'undefined' && module.exports) {
     renderConversation,
     buildConversationExport,
     buildBulkEntries,
+    planBulkConversation,
+    bulkAttachmentPrefix,
+    countAttachmentRecords,
     bulkZipFilename,
     zipEntries,
     exportConversationToFile,

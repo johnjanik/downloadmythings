@@ -6,47 +6,17 @@
 //     files/                 knowledge files
 //     chats/                 one transcript per conversation
 //     artifacts/<chat>/      artifacts as files (when an artifact option is on)
+//     attachments/<chat>/    uploads and pasted text (when Attachments is on)
 //     manifest.json          what was saved, from where, with SHA-256 hashes
 //
 // Plain script, no modules: function declarations and `var` only (see store.js).
 
 if (typeof module !== 'undefined' && module.exports && typeof renderConversation === 'undefined') {
-  Object.assign(globalThis, require('./utils.js'), require('./store.js'), require('./api.js'), require('./exporter.js'));
+  Object.assign(globalThis, require('./utils.js'), require('./store.js'), require('./api.js'), require('./files.js'), require('./exporter.js'));
 }
-
-// File types whose content is not plain text. For these, the text claude.ai
-// extracted is a stand-in for the file, not the file.
-var DMT_BINARY_EXTENSIONS = [
-  'pdf', 'doc', 'docx', 'rtf', 'odt', 'pages', 'xls', 'xlsx', 'ods', 'numbers', 'ppt', 'pptx', 'odp', 'key',
-  'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'tif', 'tiff', 'heic', 'avif', 'ico',
-  'zip', 'gz', 'tar', '7z', 'epub', 'mp3', 'wav', 'm4a', 'mp4', 'mov', 'webm'
-];
-
-var DMT_MEDIA_TYPE_EXTENSIONS = {
-  'image/webp': 'webp', 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'application/pdf': 'pdf'
-};
-
-var DMT_FIDELITY_LEGEND = {
-  'original': 'The stored file as claude.ai serves it, or the text of a text file.',
-  'extracted-text': 'Only the text claude.ai extracted from the file. Formatting and images are lost.',
-  'pdf-rendition': 'The PDF claude.ai serves for this document.',
-  'preview': 'A preview image, usually smaller than the upload and often WebP.',
-  'thumbnail': 'A small thumbnail. Nothing better was available.',
-  'missing': 'claude.ai returned neither the file nor its text.'
-};
 
 function projectIdOf(conversation) {
   return conversation.project_uuid || conversation.project_id || conversation.projectUuid || null;
-}
-
-// "report.final.PDF" -> { base: "report.final", ext: "PDF" }; no dot -> ext ""
-function splitExtension(name) {
-  const match = /^(.*)\.([A-Za-z0-9]{1,10})$/.exec(name || '');
-  return match && match[1] ? { base: match[1], ext: match[2] } : { base: name || '', ext: '' };
-}
-
-function isBinaryFilename(name) {
-  return DMT_BINARY_EXTENSIONS.includes(splitExtension(name).ext.toLowerCase());
 }
 
 function normalizeProjectOptions(options) {
@@ -84,81 +54,6 @@ function mergeProjectKnowledge(docs, files) {
     }
   }
   return items;
-}
-
-function contentByteLength(content) {
-  return typeof content === 'string' ? new TextEncoder().encode(content).length : content.size;
-}
-
-async function sha256Hex(content) {
-  const bytes = typeof content === 'string'
-    ? new TextEncoder().encode(content)
-    : new Uint8Array(await content.arrayBuffer());
-  const digest = await crypto.subtle.digest('SHA-256', bytes);
-  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
-}
-
-// The filename to save a knowledge item under, given how its bytes were obtained.
-function knowledgeFilename(name, fidelity, mediaType, usedNames) {
-  const safe = sanitizeFilename(name);
-  let { base, ext } = splitExtension(safe);
-
-  if (fidelity === 'extracted-text') {
-    // Keep the original name visible: "notes.docx" -> "notes.docx.txt"
-    base = safe;
-    ext = 'txt';
-  } else if (fidelity === 'pdf-rendition' && ext.toLowerCase() !== 'pdf') {
-    base = safe;
-    ext = 'pdf';
-  } else if (fidelity === 'preview' || fidelity === 'thumbnail') {
-    // A preview is often a different image format than the upload
-    const servedExt = DMT_MEDIA_TYPE_EXTENSIONS[String(mediaType || '').split(';')[0].trim().toLowerCase()];
-    if (servedExt && servedExt !== ext.toLowerCase() && !(servedExt === 'jpg' && ext.toLowerCase() === 'jpeg')) {
-      ext = servedExt;
-    }
-  }
-  return uniqueFilename(base, ext, usedNames);
-}
-
-// Get one knowledge item's content. Resolves with { content, record }, where
-// content is null when nothing could be fetched.
-async function fetchKnowledgeItem(orgId, item, usedNames) {
-  const record = { name: item.name, path: null, fidelity: 'missing', source: null, bytes: 0, sha256: null };
-  let content = null;
-  let mediaType = null;
-  const attempts = [];
-
-  if (item.file) {
-    for (const candidate of fileDownloadCandidates(orgId, item.file)) {
-      try {
-        const blob = await getFileBlob(candidate.url);
-        content = blob;
-        mediaType = blob.type || null;
-        record.fidelity = candidate.fidelity;
-        record.source = candidate.source;
-        break;
-      } catch (error) {
-        attempts.push(`${candidate.source}: ${error.message}`);
-      }
-    }
-  }
-
-  if (content === null && typeof item.text === 'string' && item.text.length > 0) {
-    content = item.text;
-    record.fidelity = isBinaryFilename(item.name) ? 'extracted-text' : 'original';
-    record.source = 'docs';
-  }
-
-  if (content === null) {
-    record.note = attempts.length > 0 ? `Tried ${attempts.join('; ')}` : 'No file and no text were returned';
-    return { content: null, record };
-  }
-
-  record.path = `files/${knowledgeFilename(item.name, record.fidelity, mediaType, usedNames)}`;
-  record.bytes = contentByteLength(content);
-  record.sha256 = await sha256Hex(content);
-  if (mediaType) record.mediaType = mediaType;
-  return { content, record };
 }
 
 // Everything one project contributes to the ZIP. `root` is the folder prefix
@@ -225,7 +120,7 @@ async function collectProject(orgId, project, conversations, options, root, hook
     const usedNames = new Set();
     for (let i = 0; i < items.length && !isCancelled(); i++) {
       step(`Knowledge file ${i + 1} of ${items.length}: ${items[i].name}`);
-      const { content, record } = await fetchKnowledgeItem(orgId, items[i], usedNames);
+      const { content, record } = await fetchFileItem(orgId, items[i], usedNames, 'files/');
       if (content !== null) entries.push({ path: `${root}${record.path}`, content });
       manifest.knowledge.push(record);
     }
@@ -239,9 +134,15 @@ async function collectProject(orgId, project, conversations, options, root, hook
 
     for (let i = 0; i < chats.length && !isCancelled(); i += DMT_BULK_BATCH_SIZE) {
       step(`Chats ${Math.min(i + DMT_BULK_BATCH_SIZE, chats.length)} of ${chats.length}`);
-      await Promise.all(chats.slice(i, i + DMT_BULK_BATCH_SIZE).map(async (conv) => {
+      // Fetch a batch in parallel, then file it in list order (stable names)
+      const fetched = await Promise.all(chats.slice(i, i + DMT_BULK_BATCH_SIZE).map((conv) => getConversation(orgId, conv.uuid).then(
+        (data) => ({ conv, data }),
+        (error) => ({ conv, error })
+      )));
+
+      for (const { conv, data, error: fetchError } of fetched) {
         try {
-          const data = await getConversation(orgId, conv.uuid);
+          if (fetchError) throw fetchError;
           data.model = inferModel(data);
           const name = uniqueFilename(sanitizeFilename(conv.name || conv.uuid), '', usedNames);
           const rendered = renderConversation(data, conv.uuid, o);
@@ -252,18 +153,26 @@ async function collectProject(orgId, project, conversations, options, root, hook
           for (const artifact of artifactFiles) {
             entries.push({ path: `${root}artifacts/${name}/${artifact.filename}`, content: artifact.content });
           }
-          manifest.chats.push({
+          const chatRecord = {
             uuid: conv.uuid,
             name: conv.name || '',
             path,
             updatedAt: conv.updated_at || null,
             artifacts: artifactFiles.length
-          });
+          };
+          if (o.includeAttachments) {
+            const attachments = await collectAttachmentEntries(orgId, data, `attachments/${name}/`);
+            for (const entry of attachments.entries) {
+              entries.push({ path: `${root}${entry.path}`, content: entry.content });
+            }
+            chatRecord.attachments = attachments.records;
+          }
+          manifest.chats.push(chatRecord);
           exportedChatIds.push(conv.uuid);
         } catch (error) {
           fail('chat', conv.name || conv.uuid, error);
         }
-      }));
+      }
       if (i + DMT_BULK_BATCH_SIZE < chats.length && !isCancelled()) {
         await new Promise((resolve) => setTimeout(resolve, DMT_BULK_BATCH_PAUSE_MS));
       }
@@ -277,9 +186,15 @@ async function collectProject(orgId, project, conversations, options, root, hook
 
 // Counts for the summary line: how many knowledge files came out at each fidelity.
 function summarizeProjectManifests(manifests) {
-  const summary = { projects: manifests.length, knowledge: 0, byFidelity: {}, chats: 0, failures: 0, hasInstructions: 0 };
+  const summary = { projects: manifests.length, knowledge: 0, byFidelity: {}, chats: 0, attachments: 0, attachmentsMissing: 0, failures: 0, hasInstructions: 0 };
   for (const manifest of manifests) {
     summary.chats += manifest.chats.length;
+    for (const chat of manifest.chats) {
+      for (const record of chat.attachments || []) {
+        if (record.fidelity === 'missing') summary.attachmentsMissing++;
+        else summary.attachments++;
+      }
+    }
     summary.failures += manifest.failures.length;
     if (manifest.instructions) summary.hasInstructions++;
     for (const record of manifest.knowledge) {
@@ -302,6 +217,8 @@ function describeProjectExport(summary) {
     parts.push(`${summary.knowledge} knowledge file${summary.knowledge === 1 ? '' : 's'} (${detail})`);
   }
   if (summary.chats > 0) parts.push(`${summary.chats} chat${summary.chats === 1 ? '' : 's'}`);
+  if (summary.attachments > 0) parts.push(`${summary.attachments} attachment${summary.attachments === 1 ? '' : 's'}`);
+  if (summary.attachmentsMissing > 0) parts.push(`${summary.attachmentsMissing} attachment${summary.attachmentsMissing === 1 ? '' : 's'} missing`);
   if (summary.failures > 0) parts.push(`${summary.failures} problem${summary.failures === 1 ? '' : 's'}, see manifest.json`);
   const subject = `${summary.projects} project${summary.projects === 1 ? '' : 's'}`;
   return parts.length > 0 ? `${subject}: ${parts.join(', ')}` : `${subject}: nothing to save`;
@@ -354,14 +271,8 @@ async function exportProjectsToZip(orgId, projects, conversations, options, hook
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     projectIdOf,
-    splitExtension,
-    isBinaryFilename,
     normalizeProjectOptions,
     mergeProjectKnowledge,
-    contentByteLength,
-    sha256Hex,
-    knowledgeFilename,
-    fetchKnowledgeItem,
     collectProject,
     summarizeProjectManifests,
     describeProjectExport,

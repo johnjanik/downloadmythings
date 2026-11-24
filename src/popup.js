@@ -73,6 +73,7 @@ function readExportOptions() {
     includeChats: document.getElementById('includeChats').checked,
     includeThinking: document.getElementById('includeThinking').checked,
     includeMetadata: document.getElementById('includeMetadata').checked,
+    includeAttachments: document.getElementById('includeAttachments').checked,
     includeArtifacts: document.getElementById('includeArtifacts').checked,
     extractArtifacts: document.getElementById('extractArtifacts').checked,
     artifactFormat: document.getElementById('artifactFormat').value,

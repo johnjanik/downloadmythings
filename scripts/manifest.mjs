@@ -23,6 +23,7 @@ export const CONTENT_SCRIPTS = [
   'lib/utils.js',
   'lib/store.js',
   'lib/api.js',
+  'lib/files.js',
   'lib/exporter.js',
   'lib/projects.js',
   'content.js',

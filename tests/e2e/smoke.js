@@ -35,7 +35,12 @@ const full = (c, withArtifact) => ({
   ...c,
   current_leaf_message_uuid: 'm2',
   chat_messages: [
-    { uuid: 'm1', parent_message_uuid: 'root', sender: 'human', content: [{ type: 'text', text: `Question in ${c.uuid}` }] },
+    {
+      uuid: 'm1', parent_message_uuid: 'root', sender: 'human', content: [{ type: 'text', text: `Question in ${c.uuid}` }],
+      // Only the first conversation carries uploads: the PDF from the stand-in project and some pasted text
+      files: c.uuid === IDS[0] ? [{ file_uuid: 'f1', file_name: 'handbook.pdf', file_kind: 'document' }] : [],
+      attachments: c.uuid === IDS[0] ? [{ file_name: 'pasted.txt', extracted_content: 'pasted words' }] : [],
+    },
     { uuid: 'm2', parent_message_uuid: 'm1', sender: 'assistant', content: [{ type: 'text', text: 'Answer. ' + (withArtifact ? '<antArtifact identifier="a" type="application/vnd.ant.code" language="python" title="script">print(1)</antArtifact>' : '') }] },
   ],
 });
@@ -265,8 +270,37 @@ const check = (name, ok, detail) => { results.push({ name, ok }); console.log(`$
     /^downloadmythings-projects-\d{8}-\d{6}\.zip$/.test(f7.name) && names7.includes('Alpha project/instructions.md') && names7.includes('Beta/manifest.json') && !names7.includes('Beta/instructions.md'),
     `${f7.name} ${names7.length} files`);
 
+  // Project export with attachments switched on
+  await browse.check('#includeAttachments');
+  const [d8] = await Promise.all([browse.waitForEvent('download'), browse.locator('tr[data-id="p1"] .btn-export-project').click()]);
+  const azip = await JSZip.loadAsync((await readDownload(d8)).data);
+  const am = JSON.parse(await azip.file('manifest.json').async('string'));
+  check('project export saves chat attachments beside the chats',
+    azip.file('attachments/Trip plan/handbook.pdf') !== null && azip.file('attachments/Trip plan/pasted.txt') !== null
+      && am.chats[0].attachments.length === 2 && am.chats[0].attachments.every((r) => r.fidelity === 'original'),
+    JSON.stringify(am.chats[0].attachments.map((r) => [r.path, r.fidelity])));
+
   await browse.locator('.view-tab[data-view="conversations"]').click();
   await browse.waitForSelector('tr[data-id="' + IDS[0] + '"]');
+
+  // Conversations with attachments: one chat becomes a ZIP; a bulk export lists them in attachments.json
+  await browse.uncheck('#extractArtifacts');
+  const [d9] = await Promise.all([browse.waitForEvent('download'), browse.locator(`tr[data-id="${IDS[0]}"] .btn-export`).click()]);
+  const f9 = await readDownload(d9);
+  const names9 = Object.keys((await JSZip.loadAsync(f9.data)).files).filter((n) => !n.endsWith('/')).sort();
+  check('one chat with attachments downloads as a ZIP with the uploads as files',
+    f9.name === 'Trip plan.zip' && JSON.stringify(names9) === JSON.stringify(['Trip plan.md', 'attachments.json', 'attachments/handbook.pdf', 'attachments/pasted.txt']),
+    `${f9.name} ${JSON.stringify(names9)}`);
+  const [d10] = await Promise.all([browse.waitForEvent('download'), browse.locator('#exportAllBtn').click()]);
+  const bzip = await JSZip.loadAsync((await readDownload(d10)).data);
+  const names10 = Object.keys(bzip.files).filter((n) => !n.endsWith('/')).sort();
+  check('bulk export files attachments per chat and lists them',
+    // Newest first, so the older "Trip plan" (the one with uploads) is filed as "Trip plan (2)"
+    names10.includes('attachments/Trip plan (2)/handbook.pdf') && names10.includes('attachments.json') && names10.includes('Trip plan.md')
+      && !names10.some((n) => n.startsWith('attachments/Trip plan/'))
+      && sha256(await bzip.file('attachments/Trip plan (2)/handbook.pdf').async('nodebuffer')) === sha256(PDF_BYTES),
+    JSON.stringify(names10));
+  await browse.uncheck('#includeAttachments');
   check('switching back shows conversations again', (await browse.locator('#tableContent tbody tr').count()) === 3 && !(await browse.locator('#projectOptions').isVisible()));
 
   // --- 9. Pages are not reachable from websites
