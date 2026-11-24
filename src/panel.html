@@ -116,6 +116,7 @@
     .rows .meta { font-size: 11px; color: var(--text-muted); }
     .rows .when { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
     #libraryList { max-height: none; }
+    .rows .snippet { margin-top: 2px; color: var(--text-secondary); overflow-wrap: anywhere; }
     .library-bar { display: flex; align-items: center; gap: 10px; }
     .library-bar .grow { flex: 1; color: var(--text-secondary); }
     .library-bar .btn { width: auto; padding: 7px 12px; }
@@ -246,6 +247,10 @@
       <label class="field">
         <input type="search" id="librarySearch" placeholder="Search chats by title or project">
       </label>
+      <div class="hint" id="deepSearchOffer">
+        <a href="#" id="enableDeepSearch">Search inside messages too</a>. This reads every chat once and keeps the text on this computer.
+      </div>
+      <div class="hint" id="deepSearchStatus" hidden></div>
       <div class="library-bar">
         <input type="checkbox" id="librarySelectAll" aria-label="Select all shown">
         <span class="grow" id="libraryCount">Loading...</span>
@@ -285,6 +290,7 @@
   <script src="lib/exporter.js"></script>
   <script src="lib/projects.js"></script>
   <script src="lib/account.js"></script>
+  <script src="lib/search.js"></script>
   <script src="panel.js"></script>
   <script src="panel-library.js"></script>
 </body>

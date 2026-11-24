@@ -319,6 +319,32 @@ const check = (name, ok, detail) => { results.push({ name, ok }); console.log(`$
   check('library search narrows the list', (await panel.locator('#libraryCount').textContent()) === '1 of 3 chats');
   await panel.fill('#librarySearch', '');
   await panel.waitForFunction(() => document.querySelectorAll('#libraryList li').length === 3);
+  // Search inside messages: opt in, let the index build, then find words that are in no title
+  check('search inside messages is offered, not switched on by itself',
+    (await panel.locator('#deepSearchOffer').isVisible()) && !(await panel.locator('#deepSearchStatus').isVisible()));
+  apiCalls.length = 0;
+  await panel.locator('#enableDeepSearch').click();
+  await panel.waitForFunction(() => /Searching inside all 3 chats/.test(document.getElementById('deepSearchStatus').textContent), null, { timeout: 15000 });
+  check('the index reads each chat once', apiCalls.filter((c) => /chat_conversations\/[0-9a-f-]+$/.test(c.path)).length === 3, `${apiCalls.length} calls`);
+  await panel.fill('#librarySearch', 'totals below');
+  await panel.waitForFunction(() => document.querySelectorAll('#libraryList li').length === 1);
+  check('a phrase from inside a message finds its chat and shows where',
+    (await panel.locator('#libraryList li').getAttribute('data-id')) === IDS[2] && /Totals below/.test(await panel.locator('#libraryList .snippet').textContent()),
+    await panel.locator('#libraryList .snippet').textContent());
+  await panel.fill('#librarySearch', '"question in" trip');
+  await panel.waitForFunction(() => document.querySelectorAll('#libraryList li').length === 2);
+  check('every term must match, across title and messages', true);
+  await panel.fill('#librarySearch', 'totals trip');
+  await panel.waitForFunction(() => document.querySelectorAll('#libraryList li').length === 0);
+  await panel.fill('#librarySearch', '');
+  await panel.waitForFunction(() => document.querySelectorAll('#libraryList li').length === 3);
+  // Reopening the Library must not read the chats again
+  apiCalls.length = 0;
+  await panel.locator('.tab[data-tab="export"]').click();
+  await panel.locator('.tab[data-tab="library"]').click();
+  await panel.waitForTimeout(600);
+  check('an up-to-date index is not rebuilt', apiCalls.filter((c) => /chat_conversations\/[0-9a-f-]+$/.test(c.path)).length === 0, JSON.stringify(apiCalls.map((c) => c.path)));
+
   await panel.check('#librarySelectAll');
   check('select all ticks every chat shown', (await panel.locator('#libraryExport').textContent()) === 'Export selected (3)');
   const [p7] = await Promise.all([panel.waitForEvent('download'), panel.locator('#libraryExport').click()]);
