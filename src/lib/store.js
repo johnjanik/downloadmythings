@@ -94,6 +94,15 @@ async function recordModelSnapshots(conversations) {
   return merged.snapshots;
 }
 
+// Hand a job to the print page (print.html) and open it in a new tab.
+// job: { orgId, conversations: [{ uuid, name }] or null for all, options }
+async function startPrintJob(job) {
+  await storageSet('local', { printJob: { ...job, createdAt: new Date().toISOString() } });
+  await new Promise((resolve) => {
+    chrome.tabs.create({ url: chrome.runtime.getURL('print.html') }, () => resolve());
+  });
+}
+
 // Node (vitest) only; in the browser these are plain globals.
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
@@ -104,5 +113,6 @@ if (typeof module !== 'undefined' && module.exports) {
     recordExportTimestamps,
     mergeModelSnapshots,
     recordModelSnapshots,
+    startPrintJob,
   };
 }

@@ -41,7 +41,7 @@ const full = (c, withArtifact) => ({
       files: c.uuid === IDS[0] ? [{ file_uuid: 'f1', file_name: 'handbook.pdf', file_kind: 'document' }] : [],
       attachments: c.uuid === IDS[0] ? [{ file_name: 'pasted.txt', extracted_content: 'pasted words' }] : [],
     },
-    { uuid: 'm2', parent_message_uuid: 'm1', sender: 'assistant', content: [{ type: 'text', text: 'Answer. ' + (withArtifact ? '<antArtifact identifier="a" type="application/vnd.ant.code" language="python" title="script">print(1)</antArtifact>' : '') }] },
+    { uuid: 'm2', parent_message_uuid: 'm1', sender: 'assistant', content: [{ type: 'text', text: 'Answer. ' + (withArtifact ? '<antArtifact identifier="a" type="application/vnd.ant.code" language="python" title="script">print(1)</antArtifact>' : HOSTILE_MARKDOWN) }] },
   ],
 });
 
@@ -61,6 +61,16 @@ const projectFiles = [
   { file_uuid: 'f4', file_name: 'meeting-notes.docx' } // only its extracted text exists
 ];
 
+// A reply that tries everything a transcript renderer must not fall for
+const HOSTILE_MARKDOWN = [
+  'Totals below.', '',
+  '<script>window.__xss = 1</script> <img src="https://claude.ai/pixel.png" onerror="window.__xss = 1">', '',
+  '![remote image](https://claude.ai/remote.png)', '',
+  '[bad link](javascript:window.__xss=1) and [good link](https://example.com/report)', '',
+  '| Quarter | Total |', '| --- | --- |', '| Q4 | 12 |', '',
+  '```js', 'const x = "<b>not bold</b>";', '```',
+].join('\n');
+
 const results = [];
 const check = (name, ok, detail) => { results.push({ name, ok }); console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? '  [' + detail + ']' : ''}`); };
 
@@ -73,6 +83,10 @@ const check = (name, ok, detail) => { results.push({ name, ok }); console.log(`$
     args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`],
   });
 
+  // Headless Chromium has no print dialog: count the calls instead
+  await context.addInitScript(() => { window.print = () => { window.__printCalls = (window.__printCalls || 0) + 1; }; });
+  const pageRequests = []; // non-API requests to the stand-in, such as images a page tried to load
+
   let blockExtensionPages = false; // when true, direct calls from extension pages get HTTP 403
   const apiCalls = [];
   await context.route('https://claude.ai/**', async (route) => {
@@ -81,6 +95,7 @@ const check = (name, ok, detail) => { results.push({ name, ok }); console.log(`$
     let from = '';
     try { from = request.frame().url(); } catch (e) { /* service worker */ }
     if (!url.pathname.startsWith('/api/')) {
+      pageRequests.push(url.pathname);
       return route.fulfill({ status: 200, contentType: 'text/html', body: '<html><head><title>stand-in</title></head><body>stand-in for claude.ai</body></html>' });
     }
     apiCalls.push({ path: url.pathname, from: from.startsWith('chrome-extension://') ? 'extension' : 'tab' });
@@ -303,7 +318,50 @@ const check = (name, ok, detail) => { results.push({ name, ok }); console.log(`$
   await browse.uncheck('#includeAttachments');
   check('switching back shows conversations again', (await browse.locator('#tableContent tbody tr').count()) === 3 && !(await browse.locator('#projectOptions').isVisible()));
 
-  // --- 9. Pages are not reachable from websites
+  // --- 9. PDF: the print page renders a transcript safely and opens the print dialog
+  await browse.selectOption('#exportFormat', 'pdf');
+  const [printPage] = await Promise.all([context.waitForEvent('page'), browse.locator(`tr[data-id="${IDS[2]}"] .btn-export`).click()]);
+  watch(printPage, 'print');
+  await printPage.waitForSelector('#printButton:not([disabled])', { timeout: 15000 });
+  check('print page titles the document after the conversation and opens the print dialog once',
+    (await printPage.title()) === 'Budget: Q4/Q1?' && (await printPage.evaluate(() => window.__printCalls)) === 1,
+    `${await printPage.title()} / ${await printPage.evaluate(() => window.__printCalls)} print calls`);
+  const rendered = await printPage.evaluate(() => {
+    const main = document.getElementById('content');
+    return {
+      forbidden: main.querySelectorAll('script, img, iframe, style, [onerror], [onclick]').length,
+      badLinks: Array.from(main.querySelectorAll('a')).filter((a) => !/^(https?:|mailto:|#)/.test(a.getAttribute('href') || '#')).length,
+      goodLink: main.querySelector('a[href="https://example.com/report"]') !== null,
+      table: main.querySelectorAll('table td').length,
+      code: main.querySelector('pre code') ? main.querySelector('pre code').textContent : '',
+      text: main.textContent,
+      xss: window.__xss || 0,
+    };
+  });
+  check('raw HTML in a message is shown as text and never becomes an element',
+    rendered.forbidden === 0 && rendered.xss === 0 && rendered.text.includes('<script>window.__xss = 1</script>'), JSON.stringify({ forbidden: rendered.forbidden, xss: rendered.xss }));
+  check('unsafe links lose their target; safe links keep it', rendered.badLinks === 0 && rendered.goodLink);
+  check('tables and code blocks are rendered', rendered.table === 2 && rendered.code.includes('<b>not bold</b>'), `${rendered.table} cells`);
+  check('the transcript loads no images from the network', !pageRequests.some((p) => /pixel\.png|remote\.png/.test(p)) && rendered.text.includes('[image: remote image]'), JSON.stringify(pageRequests.filter((p) => /png/.test(p))));
+  await printPage.close();
+
+  const [bulkPrint] = await Promise.all([context.waitForEvent('page'), browse.locator('#exportAllBtn').click()]);
+  watch(bulkPrint, 'bulk print');
+  await bulkPrint.waitForSelector('#printButton:not([disabled])', { timeout: 15000 });
+  check('several conversations print as one document with a contents list',
+    (await bulkPrint.locator('article').count()) === 3 && (await bulkPrint.locator('nav.contents li a').count()) === 3
+      && (await bulkPrint.title()) === 'Conversations (3)' && (await bulkPrint.evaluate(() => window.__printCalls)) === 1);
+  await bulkPrint.close();
+
+  await browse.locator('.view-tab[data-view="projects"]').click();
+  const pdfOption = await browse.evaluate(() => ({
+    disabled: document.querySelector('#exportFormat option[value="pdf"]').disabled,
+    selected: document.getElementById('exportFormat').value,
+  }));
+  check('PDF is not offered for project ZIPs', pdfOption.disabled && pdfOption.selected === 'markdown', JSON.stringify(pdfOption));
+  await browse.locator('.view-tab[data-view="conversations"]').click();
+
+  // --- 10. Pages are not reachable from websites
   const probe = await claude.evaluate(async (id) => {
     try { const r = await fetch(`chrome-extension://${id}/browse.html`); return `fetched ${r.status}`; } catch (e) { return 'blocked'; }
   }, extId);

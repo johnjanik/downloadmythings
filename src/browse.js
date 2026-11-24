@@ -589,6 +589,12 @@ async function refreshAfterExport() {
 // Export single conversation
 async function exportConversation(conversationId, conversationName) {
   try {
+    // PDF: a print page renders the conversation and opens the print dialog
+    if (readExportOptions().format === 'pdf') {
+      await startPrintJob({ orgId, conversations: [{ uuid: conversationId, name: conversationName }], options: readExportOptions() });
+      return;
+    }
+
     showToast(`Exporting ${conversationName}...`);
     const result = await exportConversationToFile(orgId, conversationId, readExportOptions(), conversationName);
     await refreshAfterExport();
@@ -613,6 +619,16 @@ async function exportAllFiltered() {
 
   if (conversationsToExport.length === 0) {
     showToast('No conversations to export', true);
+    return;
+  }
+
+  // PDF: one document for all of them, with a contents page
+  if (readExportOptions().format === 'pdf') {
+    await startPrintJob({
+      orgId,
+      conversations: conversationsToExport.map(conv => ({ uuid: conv.uuid, name: conv.name })),
+      options: readExportOptions()
+    });
     return;
   }
 

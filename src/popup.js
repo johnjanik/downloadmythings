@@ -157,6 +157,12 @@ document.getElementById('exportCurrent').addEventListener('click', (event) => {
     const orgId = await getOrgId();
     if (!orgId) throw new Error(ORG_ID_MISSING);
 
+    // PDF: a print page renders the conversation and opens the print dialog
+    if (readExportOptions().format === 'pdf') {
+      await startPrintJob({ orgId, conversations: [{ uuid: conversationId, name: '' }], options: readExportOptions() });
+      return;
+    }
+
     const response = await sendToContentScript(tab.id, {
       action: 'exportConversation',
       conversationId,
@@ -173,6 +179,13 @@ document.getElementById('exportCurrent').addEventListener('click', (event) => {
 // Export all conversations
 document.getElementById('exportAll').addEventListener('click', (event) => {
   runExport(event.currentTarget, 'Fetching all conversations...', async () => {
+    if (readExportOptions().format === 'pdf') {
+      const printOrgId = await getOrgId();
+      if (!printOrgId) throw new Error(ORG_ID_MISSING);
+      await startPrintJob({ orgId: printOrgId, conversations: null, options: readExportOptions() });
+      return;
+    }
+
     const tab = await queryActiveTab();
     if (!tab || !isClaudeTab(tab)) {
       throw new Error('Open claude.ai in this tab first, or use Browse All Conversations.');

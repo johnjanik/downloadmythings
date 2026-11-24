@@ -196,6 +196,10 @@ function setView(view) {
   });
   document.getElementById('projectOptions').style.display = projectsView ? '' : 'none';
   document.getElementById('filterBtn').style.display = projectsView ? 'none' : '';
+  // A project ZIP holds files, so the print-to-PDF format does not apply here
+  const formatSelect = document.getElementById('exportFormat');
+  formatSelect.querySelector('option[value="pdf"]').disabled = projectsView;
+  if (projectsView && formatSelect.value === 'pdf') formatSelect.value = 'markdown';
   // "Project chats" replaces the plain "Chats" switch in this view
   document.getElementById('includeChats').closest('label').style.display = projectsView ? 'none' : '';
   document.getElementById('searchInput').placeholder = projectsView
