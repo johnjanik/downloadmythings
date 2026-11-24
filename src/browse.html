@@ -800,7 +800,11 @@
             <input type="file" id="restoreFileBrowse" accept="application/json,.json" style="display: none;">
           </div>
         </div>
-        <h1>Browse Conversations</h1>
+        <h1>DownloadMyThings</h1>
+        <div class="view-switch" role="tablist">
+          <button class="view-tab active" data-view="conversations" role="tab">Conversations</button>
+          <button class="view-tab" data-view="projects" role="tab">Projects</button>
+        </div>
       </div>
 
       <div class="header-right">
@@ -834,6 +838,22 @@
 
       <div class="export-controls-wrapper">
         <div class="export-settings">
+          <div class="export-row" id="projectOptions" style="display: none;">
+            <div class="export-section">
+              <label title="Save the project's custom instructions as instructions.md">
+                <input type="checkbox" id="includeInstructions" checked>
+                Instructions
+              </label>
+              <label title="Save the project's knowledge files in files/">
+                <input type="checkbox" id="includeKnowledge" checked>
+                Knowledge files
+              </label>
+              <label title="Save every conversation in the project in chats/, using the chat options below">
+                <input type="checkbox" id="includeProjectChats" checked>
+                Project chats
+              </label>
+            </div>
+          </div>
           <div class="export-row">
             <div class="export-section chat-section">
               <label>
@@ -985,6 +1005,28 @@
       background-color: var(--bg-card);
       color: var(--text-primary);
     }
+    .view-switch {
+      display: inline-flex;
+      margin-left: 16px;
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    .view-tab {
+      padding: 6px 14px;
+      border: none;
+      background: var(--bg-card);
+      color: var(--text-secondary);
+      font-size: 14px;
+      cursor: pointer;
+    }
+    .view-tab + .view-tab {
+      border-left: 1px solid var(--border-color);
+    }
+    .view-tab.active {
+      background: var(--primary-color);
+      color: #ffffff;
+    }
   </style>
   
   <div class="toast" id="toast"></div>
@@ -992,7 +1034,7 @@
   <!-- Progress modal for bulk export -->
   <div id="progressModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: var(--modal-overlay); z-index: 3000;">
     <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: var(--bg-card); padding: 30px; border-radius: 8px; min-width: 400px; color: var(--text-primary);">
-      <h3 style="margin-top: 0; color: var(--text-primary);">Exporting Conversations</h3>
+      <h3 id="progressTitle" style="margin-top: 0; color: var(--text-primary);">Exporting Conversations</h3>
       <div style="margin: 20px 0;">
         <div id="progressText" style="color: var(--text-primary);">Preparing export...</div>
         <div style="background: var(--progress-bg); height: 20px; border-radius: 10px; margin-top: 10px; overflow: hidden;">
@@ -1012,6 +1054,8 @@
   <script src="lib/store.js"></script>
   <script src="lib/api.js"></script>
   <script src="lib/exporter.js"></script>
+  <script src="lib/projects.js"></script>
   <script src="browse.js"></script>
+  <script src="browse-projects.js"></script>
 </body>
 </html>

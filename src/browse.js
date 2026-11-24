@@ -37,6 +37,7 @@ let selectedConversations = new Set(); // Track selected conversation IDs
 let lastCheckedIndex = null; // Track last checked checkbox for shift+click range selection
 let exportTimestamps = {}; // Map conversation UUID to last export timestamp
 let modelSnapshots = {}; // Map conversation UUID to { firstSeen, current, ... }, see lib/store.js
+let currentView = 'conversations'; // 'conversations' or 'projects' (see browse-projects.js)
 let statusFilter = 'all'; // 'all', 'new', 'exported', or 'projects' (search scope = project names)
 let dateFormat = 'mdy'; // 'mdy' or 'dmy'
 let timeFormat = '12h'; // '12h' or '24h'
@@ -219,6 +220,11 @@ function getProjectName(conversation) {
 
 // Apply filters and sorting
 function applyFiltersAndSort() {
+  if (currentView === 'projects') {
+    displayProjects();
+    return;
+  }
+
   const searchTerm = document.getElementById('searchInput').value.toLowerCase();
 
   // Filter conversations
@@ -684,15 +690,16 @@ function showError(message) {
 }
 
 // Show toast notification
-function showToast(message, isError = false) {
+function showToast(message, isError = false, duration = 3000) {
   const toast = document.getElementById('toast');
   toast.textContent = message;
   toast.style.background = isError ? '#d32f2f' : '#333';
   toast.classList.add('show');
   
-  setTimeout(() => {
+  clearTimeout(showToast.timer);
+  showToast.timer = setTimeout(() => {
     toast.classList.remove('show');
-  }, 3000);
+  }, duration);
 }
 
 // Setup event listeners
@@ -890,5 +897,8 @@ function setupEventListeners() {
   document.querySelector('.filter-option[data-value="all"]').classList.add('selected');
 
   // Export all button
-  document.getElementById('exportAllBtn').addEventListener('click', exportAllFiltered);
+  document.getElementById('exportAllBtn').addEventListener('click', () => {
+    if (currentView === 'projects') exportSelectedProjects();
+    else exportAllFiltered();
+  });
 }

@@ -239,6 +239,9 @@ async function exportConversationsToZip(orgId, conversations, options, hooks) {
 // Node (vitest) only; in the browser these are plain globals.
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
+    DMT_BULK_BATCH_SIZE,
+    DMT_BULK_BATCH_PAUSE_MS,
+    DMT_NOTHING_TO_EXPORT,
     fileDateStamp,
     normalizeExportOptions,
     isNothingToExport,

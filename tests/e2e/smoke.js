@@ -40,6 +40,22 @@ const full = (c, withArtifact) => ({
   ],
 });
 
+// Stand-in project: one file of each kind a real project tends to hold
+const PDF_BYTES = Buffer.from('%PDF-1.7 stand-in handbook');
+const WEBP_BYTES = Buffer.from('RIFF....WEBP stand-in preview');
+const sha256 = (data) => require('crypto').createHash('sha256').update(data).digest('hex');
+const projectList = [
+  { uuid: 'p1', name: 'Alpha project', description: 'Launch work', created_at: '2026-01-05T09:00:00Z', updated_at: '2026-03-01T10:05:00Z' },
+  { uuid: 'p2', name: 'Beta', created_at: '2026-02-05T09:00:00Z', updated_at: '2026-02-06T09:00:00Z' },
+];
+const projectDocs = [{ file_name: 'brief.md', content: '# Brief' }, { file_name: 'meeting-notes.docx', content: 'extracted words' }];
+const projectFiles = [
+  { file_uuid: 'f1', file_name: 'handbook.pdf' },      // served in full by the contents endpoint
+  { file_uuid: 'f2', file_name: 'diagram.png' },       // only a WebP preview is served
+  { file_uuid: 'f3', file_name: 'budget.xlsx' },       // nothing is served
+  { file_uuid: 'f4', file_name: 'meeting-notes.docx' } // only its extracted text exists
+];
+
 const results = [];
 const check = (name, ok, detail) => { results.push({ name, ok }); console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? '  [' + detail + ']' : ''}`); };
 
@@ -69,7 +85,15 @@ const check = (name, ok, detail) => { results.push({ name, ok }); console.log(`$
     const json = (body) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
     if (url.pathname === '/api/organizations') return json([{ uuid: 'api-org', capabilities: ['api'] }, { uuid: ORG, capabilities: ['chat'] }]);
     if (url.pathname === `/api/organizations/${ORG}/chat_conversations`) return json(list);
-    if (url.pathname === `/api/organizations/${ORG}/projects`) return json([{ uuid: 'p1', name: 'Alpha project' }]);
+    const bin = (body, type) => route.fulfill({ status: 200, contentType: type, body });
+    if (url.pathname === `/api/organizations/${ORG}/projects`) return json(projectList);
+    if (url.pathname === `/api/organizations/${ORG}/projects/p1`) return json({ ...projectList[0], prompt_template: 'Always answer in French.' });
+    if (url.pathname === `/api/organizations/${ORG}/projects/p2`) return json(projectList[1]);
+    if (url.pathname === `/api/organizations/${ORG}/projects/p1/docs`) return json(projectDocs);
+    if (url.pathname === `/api/organizations/${ORG}/projects/p1/files`) return json(projectFiles);
+    if (/\/projects\/p2\/(docs|files)$/.test(url.pathname)) return json([]);
+    if (url.pathname === `/api/organizations/${ORG}/files/f1/contents`) return bin(PDF_BYTES, 'application/pdf');
+    if (url.pathname === `/api/${ORG}/files/f2/preview`) return bin(WEBP_BYTES, 'image/webp');
     const m = url.pathname.match(/chat_conversations\/([a-f0-9-]+)$/);
     if (m) { const c = list.find((x) => x.uuid === m[1]); if (c) return json(full(c, c.uuid !== IDS[2])); }
     return route.fulfill({ status: 404, contentType: 'application/json', body: '{}' });
@@ -144,6 +168,12 @@ const check = (name, ok, detail) => { results.push({ name, ok }); console.log(`$
   await browse.uncheck('#flattenArtifacts'); await browse.check('#includeChats');
   const [d4] = await Promise.all([browse.waitForEvent('download'), browse.locator('.btn-export').first().click()]);
   check('single export also works through the relay', /\.json$/.test((await readDownload(d4)).name));
+  await browse.locator('.view-tab[data-view="projects"]').click();
+  const [d4p] = await Promise.all([browse.waitForEvent('download'), browse.locator('tr[data-id="p1"] .btn-export-project').click()]);
+  const relayZip = await JSZip.loadAsync((await readDownload(d4p)).data);
+  const relayedPdf = await relayZip.file('files/handbook.pdf').async('nodebuffer');
+  check('file bytes survive the relay unchanged', sha256(relayedPdf) === sha256(PDF_BYTES));
+  await browse.locator('.view-tab[data-view="conversations"]').click();
   blockExtensionPages = false;
 
   // --- 6. Popup: export the conversation open in the claude.ai tab
@@ -192,15 +222,63 @@ const check = (name, ok, detail) => { results.push({ name, ok }); console.log(`$
   check('options links to our issue tracker, not upstream\'s email',
     (await options.locator('a[href="https://github.com/johnjanik/downloadmythings/issues"]').count()) === 1 && !(await options.content()).includes('mailto:'));
 
-  // --- 8. Pages are not reachable from websites
+  // --- 8. Projects view: export one project, then all
+  await browse.bringToFront();
+  await browse.reload();
+  await browse.waitForSelector('#tableContent table tbody tr', { timeout: 15000 });
+  await browse.selectOption('#exportFormat', 'markdown');
+  await browse.check('#extractArtifacts');
+  await browse.locator('.view-tab[data-view="projects"]').click();
+  await browse.waitForSelector('tr[data-id="p1"]');
+  check('projects view lists projects with their chat counts',
+    (await browse.locator('#tableContent tbody tr').count()) === 2
+      && (await browse.locator('tr[data-id="p1"] td').nth(1).textContent()).trim() === '1'
+      && /Showing 2 of 2 projects/.test(await browse.locator('#stats').textContent()));
+  check('project options appear only in the projects view', await browse.locator('#projectOptions').isVisible());
+
+  const [d6] = await Promise.all([browse.waitForEvent('download'), browse.locator('tr[data-id="p1"] .btn-export-project').click()]);
+  const f6 = await readDownload(d6);
+  const pzip = await JSZip.loadAsync(f6.data);
+  const pnames = Object.keys(pzip.files).filter((n) => !pzip.files[n].dir).sort();
+  console.log('      zip:', f6.name, JSON.stringify(pnames));
+  check('a single project is saved as "<Project name>.zip" without a top folder', f6.name === 'Alpha project.zip' && pnames.includes('manifest.json'));
+  check('project ZIP holds instructions, knowledge files, chats and artifacts',
+    ['instructions.md', 'files/brief.md', 'files/handbook.pdf', 'files/diagram.webp', 'files/meeting-notes.docx.txt', 'chats/Trip plan.md', 'artifacts/Trip plan/script.py']
+      .every((n) => pnames.includes(n)), JSON.stringify(pnames));
+  check('instructions are saved verbatim', (await pzip.file('instructions.md').async('string')) === 'Always answer in French.');
+  check('the PDF is byte-identical to what was served', sha256(await pzip.file('files/handbook.pdf').async('nodebuffer')) === sha256(PDF_BYTES));
+  const pm = JSON.parse(await pzip.file('manifest.json').async('string'));
+  const fidelity = Object.fromEntries(pm.knowledge.map((r) => [r.name, r.fidelity]));
+  check('manifest records how faithful each knowledge file is',
+    JSON.stringify(fidelity) === JSON.stringify({ 'brief.md': 'original', 'meeting-notes.docx': 'extracted-text', 'handbook.pdf': 'original', 'diagram.png': 'preview', 'budget.xlsx': 'missing' }),
+    JSON.stringify(fidelity));
+  check('manifest hash matches the saved file', pm.knowledge.find((r) => r.name === 'handbook.pdf').sha256 === sha256(PDF_BYTES));
+  check('the file claude.ai would not serve is reported, not silently dropped',
+    !pnames.some((n) => n.includes('budget')) && /tried/i.test(pm.knowledge.find((r) => r.name === 'budget.xlsx').note || ''));
+  const toast = (await browse.locator('#toast').textContent()).trim();
+  check('the summary names each fidelity', toast === 'Exported 1 project: 5 knowledge files (2 original, 1 extracted-text, 1 preview, 1 missing), 1 chat', toast);
+
+  const [d7] = await Promise.all([browse.waitForEvent('download'), browse.locator('#exportAllBtn').click()]);
+  const f7 = await readDownload(d7);
+  const names7 = Object.keys((await JSZip.loadAsync(f7.data)).files).filter((n) => !n.endsWith('/')).sort();
+  check('several projects go into one ZIP with a folder each',
+    /^downloadmythings-projects-\d{8}-\d{6}\.zip$/.test(f7.name) && names7.includes('Alpha project/instructions.md') && names7.includes('Beta/manifest.json') && !names7.includes('Beta/instructions.md'),
+    `${f7.name} ${names7.length} files`);
+
+  await browse.locator('.view-tab[data-view="conversations"]').click();
+  await browse.waitForSelector('tr[data-id="' + IDS[0] + '"]');
+  check('switching back shows conversations again', (await browse.locator('#tableContent tbody tr').count()) === 3 && !(await browse.locator('#projectOptions').isVisible()));
+
+  // --- 9. Pages are not reachable from websites
   const probe = await claude.evaluate(async (id) => {
     try { const r = await fetch(`chrome-extension://${id}/browse.html`); return `fetched ${r.status}`; } catch (e) { return 'blocked'; }
   }, extId);
   check('a website cannot load browse.html', probe === 'blocked', probe);
 
-  // Errors this test causes on purpose: refused direct calls (step 5) and the
-  // blocked fetch of an extension page from a website (step 8).
-  const expected = (e) => /403/.test(e) || /net::ERR_FAILED/.test(e);
+  // Errors this test causes on purpose: refused direct calls (step 5), files
+  // the stand-in does not serve (404), and the blocked fetch of an extension
+  // page from a website (step 9).
+  const expected = (e) => /403/.test(e) || /404 \(Not Found\)/.test(e) || /net::ERR_FAILED/.test(e);
   const unexpected = pageErrors.filter((e) => !expected(e));
   check('no unexpected page errors', unexpected.length === 0, unexpected.join(' | ').slice(0, 600));
 
