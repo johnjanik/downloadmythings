@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import utils from '../chrome/utils.js';
+import utils from '../src/lib/utils.js';
 
 const {
   getCurrentBranch,
