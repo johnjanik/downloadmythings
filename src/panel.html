@@ -94,6 +94,10 @@
     details[open] > summary { margin-bottom: 10px; }
     .settings { display: flex; flex-direction: column; gap: 10px; }
     .hint { font-size: 11px; color: var(--text-muted); }
+    .prompt {
+      width: 100%; resize: vertical; padding: 8px 10px; border-radius: 8px; font: inherit; color: var(--text-primary);
+      background: var(--secondary-color); border: var(--hairline) solid var(--input-border);
+    }
 
     .count {
       margin-left: 6px; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 500;
@@ -112,6 +116,7 @@
     .rows .meta { font-size: 11px; color: var(--text-muted); }
     .rows .when { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
     #libraryList { max-height: none; }
+    .rows .snippet { margin-top: 2px; color: var(--text-secondary); overflow-wrap: anywhere; }
     .library-bar { display: flex; align-items: center; gap: 10px; }
     .library-bar .grow { flex: 1; color: var(--text-secondary); }
     .library-bar .btn { width: auto; padding: 7px 12px; }
@@ -164,6 +169,7 @@
           <select id="projectPicker"></select>
         </label>
         <button class="btn primary" id="downloadProject" disabled>Download Entire Project</button>
+        <button class="btn" id="moveToClaudeCode" disabled title="A ZIP laid out for Claude Code: CLAUDE.md, docs/ and chats/">Move to Claude Code</button>
         <div class="btn-row">
           <button class="btn" id="downloadFiles" disabled>Download All Files</button>
           <button class="btn" id="downloadChats" disabled>Download All Chats</button>
@@ -206,8 +212,16 @@
             <label class="check"><input type="checkbox" id="includeMetadata"> Metadata (dates, model, link)</label>
             <label class="check"><input type="checkbox" id="includeArtifacts"> Artifacts inside the chat text</label>
             <label class="check"><input type="checkbox" id="extractArtifacts"> Artifacts as separate files</label>
+            <label class="check" title="Adds title, dates, model and link as YAML properties at the top of each Markdown chat"><input type="checkbox" id="frontMatter"> Front matter for Obsidian (Markdown chats)</label>
           </div>
         </details>
+      </section>
+
+      <section class="card" id="handoffCard" hidden>
+        <h2>Next: open it in Claude Code</h2>
+        <p>Unzip <span id="handoffFile"></span> into an empty folder, start Claude Code there, and paste this prompt.</p>
+        <textarea id="handoffPrompt" class="prompt" rows="4" readonly></textarea>
+        <button class="btn" id="copyHandoff">Copy prompt</button>
       </section>
 
       <section class="card" id="explorerCard" hidden>
@@ -226,6 +240,49 @@
         <p>Your whole account: every project with its instructions, files and chats, and every other chat. Large accounts are saved as several ZIP files.</p>
         <button class="btn primary" id="everythingButton" disabled>Export everything</button>
       </section>
+
+      <section class="card" id="syncCard" hidden>
+        <h2>Sync to a folder</h2>
+        <p>Keeps a folder on this computer up to date with your whole account, as ordinary files. Each run writes only what is new or changed, and never deletes what you already have.</p>
+        <div class="pill" id="syncFolderName" hidden></div>
+        <div class="btn-row" id="syncControls" hidden>
+          <button class="btn" id="chooseSyncFolder">Choose folder...</button>
+          <button class="btn primary" id="syncNow" disabled>Sync now</button>
+        </div>
+        <button class="btn" id="openSync" hidden>Open folder sync</button>
+        <div class="hint" id="syncLast"></div>
+      </section>
+
+      <section class="card" id="backupCard">
+        <h2>Backups</h2>
+        <p>Your projects and chats saved as one ZIP in your Downloads folder, now or on a schedule.</p>
+        <label class="field">
+          <span>Back up</span>
+          <select id="backupScope">
+            <option value="everything">Everything: all projects and chats</option>
+            <option value="projects">Projects I choose</option>
+          </select>
+        </label>
+        <ul class="rows" id="backupProjects" hidden></ul>
+        <label class="field" id="backupMethodBox" hidden>
+          <span>Save as</span>
+          <select id="backupMethod">
+            <option value="zip">A ZIP in Downloads</option>
+            <option value="folder">An update to the sync folder</option>
+          </select>
+        </label>
+        <button class="btn primary" id="backupNow" disabled>Back up now</button>
+        <label class="field">
+          <span>Automatic backup</span>
+          <select id="backupSchedule">
+            <option value="off">Off</option>
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+          </select>
+        </label>
+        <div class="hint">Automatic backups run while the browser is open, in a tab that closes itself when done.</div>
+        <div class="hint" id="backupLast"></div>
+      </section>
     </main>
 
     <!-- ===================== Library ===================== -->
@@ -233,6 +290,10 @@
       <label class="field">
         <input type="search" id="librarySearch" placeholder="Search chats by title or project">
       </label>
+      <div class="hint" id="deepSearchOffer">
+        <a href="#" id="enableDeepSearch">Search inside messages too</a>. This reads every chat once and keeps the text on this computer.
+      </div>
+      <div class="hint" id="deepSearchStatus" hidden></div>
       <div class="library-bar">
         <input type="checkbox" id="librarySelectAll" aria-label="Select all shown">
         <span class="grow" id="libraryCount">Loading...</span>
@@ -272,6 +333,8 @@
   <script src="lib/exporter.js"></script>
   <script src="lib/projects.js"></script>
   <script src="lib/account.js"></script>
+  <script src="lib/search.js"></script>
+  <script src="lib/sync.js"></script>
   <script src="panel.js"></script>
   <script src="panel-library.js"></script>
 </body>

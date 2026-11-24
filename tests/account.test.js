@@ -4,11 +4,13 @@ import account from '../src/lib/account.js';
 import api from '../src/lib/api.js';
 import exporter from '../src/lib/exporter.js';
 import files from '../src/lib/files.js';
+import projectsLib from '../src/lib/projects.js';
 
 const JSZip = createRequire(import.meta.url)('../src/vendor/jszip.min.js');
 const { createPartWriter, describeAccountExport, exportEverything } = account;
 const { filterConversationsByUpdated } = exporter;
 const { markdownFilename, fetchFileItem } = files;
+const { exportProjectsToZip } = projectsLib;
 const { fetchWithRetry, apiGet, dmtRetry } = api;
 
 const ORG = 'org-1';
@@ -248,5 +250,55 @@ describe('describeAccountExport', () => {
   it('reads as a sentence', () => {
     expect(describeAccountExport({ projects: 12, otherChats: 840, problems: 0 }, 2)).toBe('12 projects and 840 other chats in 2 ZIP files');
     expect(describeAccountExport({ projects: 1, otherChats: 1, problems: 3 }, 1)).toBe('1 project and 1 other chat in 1 ZIP file; 3 problems, see manifest.json');
+  });
+});
+
+describe('exportProjectsToZip', () => {
+  const twoProjects = [{ uuid: 'p-1', name: 'Alpha' }, { uuid: 'p-2', name: 'Beta' }];
+  const stubTwoProjects = () => stubClaude(Object.fromEntries(twoProjects.flatMap((project) => [
+    [`/api/organizations/org-1/projects/${project.uuid}`, json({ ...project, prompt_template: `Instructions for ${project.name}` })],
+    [`/api/organizations/org-1/projects/${project.uuid}/docs`, json([{ file_name: 'notes.md', content: `# ${project.name}` }])],
+    [`/api/organizations/org-1/projects/${project.uuid}/files`, json([])],
+  ])));
+
+  it('saves one project without a top-level folder, named after the project', async () => {
+    stubTwoProjects();
+    const result = await exportProjectsToZip(ORG, [twoProjects[0]], [], {});
+    expect(result).toMatchObject({ cancelled: false, filename: 'Alpha.zip', parts: ['Alpha.zip'] });
+    expect((await entriesOf(saved[0])).names).toEqual(['files/notes.md', 'instructions.md', 'manifest.json']);
+  });
+
+  it('gives one project its folder when asked, so backups always look the same', async () => {
+    stubTwoProjects();
+    await exportProjectsToZip(ORG, [twoProjects[0]], [], { projectFolders: true, zipFilename: 'backup' });
+    expect(saved[0].name).toBe('backup.zip');
+    expect((await entriesOf(saved[0])).names).toEqual(['Alpha/files/notes.md', 'Alpha/instructions.md', 'Alpha/manifest.json']);
+  });
+
+  it('keeps several projects in one ZIP while they fit', async () => {
+    stubTwoProjects();
+    const result = await exportProjectsToZip(ORG, twoProjects, [], { zipFilename: 'both' });
+    expect(result.parts).toEqual(['both.zip']);
+    expect((await entriesOf(saved[0])).names.filter((name) => name.endsWith('instructions.md'))).toEqual(['Alpha/instructions.md', 'Beta/instructions.md']);
+  });
+
+  it('starts a new ZIP part once the content passes the limit', async () => {
+    stubTwoProjects();
+    const result = await exportProjectsToZip(ORG, twoProjects, [], { zipFilename: 'both', partLimitBytes: 1 });
+    expect(result).toMatchObject({ cancelled: false, filename: 'both-part2.zip', parts: ['both-part1.zip', 'both-part2.zip'] });
+    expect((await entriesOf(saved[0])).names.every((name) => name.startsWith('Alpha/'))).toBe(true);
+    expect((await entriesOf(saved[1])).names.every((name) => name.startsWith('Beta/'))).toBe(true);
+    expect(result.summary.projects).toBe(2);
+  });
+
+  it('saves nothing when cancelled while the ZIP is being built', async () => {
+    stubTwoProjects();
+    let building = false;
+    const result = await exportProjectsToZip(ORG, [twoProjects[0]], [], {}, {
+      onProgress: ({ label }) => { if (label === 'Creating ZIP file...') building = true; },
+      isCancelled: () => building,
+    });
+    expect(result).toMatchObject({ cancelled: true, filename: null, parts: [] });
+    expect(saved).toEqual([]);
   });
 });

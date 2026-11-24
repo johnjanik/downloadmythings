@@ -17,9 +17,25 @@ if (typeof module !== 'undefined' && module.exports && typeof recordModelSnapsho
 // again a few times before giving up; a long export makes hundreds of calls.
 var dmtRetry = { attempts: 3, baseMs: 1500, maxMs: 30000 };
 
+// A long export hands its AbortSignal here, so Cancel stops the requests that
+// are already in flight instead of waiting for them to finish.
+var dmtRequestSignal = null;
+
+function setRequestSignal(signal) {
+  dmtRequestSignal = signal || null;
+}
+
+function cancelledError() {
+  const error = new Error('Cancelled');
+  error.status = -2; // never worth relaying or retrying
+  error.cancelled = true;
+  return error;
+}
+
 async function fetchWithRetry(url, init) {
   for (let attempt = 0; ; attempt++) {
-    const response = await fetch(url, init);
+    if (dmtRequestSignal && dmtRequestSignal.aborted) throw cancelledError();
+    const response = await fetch(url, dmtRequestSignal ? { ...init, signal: dmtRequestSignal } : init);
     const retryable = response.status === 429 || response.status === 502 || response.status === 503 || response.status === 504;
     if (!retryable || attempt >= dmtRetry.attempts) return response;
 
@@ -37,6 +53,7 @@ async function apiGet(path) {
       headers: { Accept: 'application/json' }
     });
   } catch (cause) {
+    if (cause.cancelled || cause.name === 'AbortError') throw cancelledError();
     const error = new Error(`Could not reach claude.ai (${cause.message})`);
     error.status = 0;
     throw error;
@@ -69,6 +86,7 @@ async function apiGetBlob(pathOrUrl) {
   try {
     response = await fetchWithRetry(url.href, { credentials: 'include' });
   } catch (cause) {
+    if (cause.cancelled || cause.name === 'AbortError') throw cancelledError();
     const error = new Error(`Could not reach claude.ai (${cause.message})`);
     error.status = 0;
     throw error;
@@ -320,6 +338,7 @@ async function getConversation(orgId, conversationId) {
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     dmtRetry,
+    setRequestSignal,
     fetchWithRetry,
     apiGet,
     apiGetBlob,

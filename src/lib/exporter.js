@@ -31,7 +31,8 @@ function normalizeExportOptions(options) {
     extractArtifacts: Boolean(o.extractArtifacts),   // artifacts as files in nested folders
     flattenArtifacts: Boolean(o.flattenArtifacts),   // artifacts as files in one flat folder
     artifactFormat: o.artifactFormat || 'original',
-    includeAttachments: Boolean(o.includeAttachments) // uploads and pasted text as files
+    includeAttachments: Boolean(o.includeAttachments), // uploads and pasted text as files
+    frontMatter: Boolean(o.frontMatter)               // YAML front matter on Markdown chats (Obsidian)
   };
 }
 
@@ -62,12 +63,30 @@ function filterConversationsByUpdated(conversations, from, to) {
 }
 
 // The conversation transcript in the chosen format.
+// YAML front matter for a Markdown transcript: the properties Obsidian and
+// similar note tools read. Values are JSON strings, which are valid YAML.
+function buildFrontMatter(data, conversationId, extra) {
+  const fields = {
+    title: data.name || 'Untitled Conversation',
+    created: data.created_at || null,
+    updated: data.updated_at || null,
+    model: data.model || null,
+    source: conversationId ? `https://claude.ai/chat/${conversationId}` : null,
+    ...(extra || {})
+  };
+  const lines = Object.entries(fields)
+    .filter(([, value]) => value !== null && value !== undefined && value !== '')
+    .map(([key, value]) => `${key}: ${JSON.stringify(String(value))}`);
+  return `---\n${lines.join('\n')}\ntags: ["claude"]\n---\n\n`;
+}
+
 function renderConversation(data, conversationId, options) {
   const o = normalizeExportOptions(options);
   switch (o.format) {
     case 'markdown':
       return {
-        content: convertToMarkdown(data, o.includeMetadata, conversationId, o.includeArtifacts, o.includeThinking),
+        content: (o.frontMatter ? buildFrontMatter(data, conversationId, (options || {}).frontMatterExtra) : '')
+          + convertToMarkdown(data, o.includeMetadata, conversationId, o.includeArtifacts, o.includeThinking),
         ext: 'md',
         type: 'text/markdown'
       };
@@ -189,6 +208,48 @@ function zipEntries(entries, onProgress) {
     { type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } },
     onProgress ? (metadata) => onProgress(metadata.percent) : undefined
   );
+}
+
+var DMT_PART_LIMIT_BYTES = 256 * 1024 * 1024; // start a new ZIP part past this much content
+
+// Gathers entries and downloads a ZIP part each time the limit is passed.
+// A single part is named "<base>.zip"; several are "<base>-part1.zip", ...
+// `isCancelled`, when given, is asked after each ZIP is built: a cancelled part is not saved.
+function createPartWriter(baseName, limitBytes, onZipProgress, isCancelled) {
+  let entries = [];
+  let bytes = 0;
+  const parts = [];
+
+  const nextName = (isLast) => (isLast && parts.length === 0 ? `${baseName}.zip` : `${baseName}-part${parts.length + 1}.zip`);
+
+  async function flush(isLast) {
+    if (entries.length === 0) return;
+    const filename = nextName(isLast);
+    const blob = await zipEntries(entries, onZipProgress);
+    if (isCancelled && isCancelled()) return;
+    downloadFile(blob, filename, 'application/zip');
+    parts.push(filename);
+    entries = [];
+    bytes = 0;
+  }
+
+  return {
+    parts,
+    // The name the final part will get, for the manifest inside it
+    finalName: () => nextName(true),
+    async add(newEntries) {
+      for (const entry of newEntries) {
+        entries.push(entry);
+        bytes += contentByteLength(entry.content);
+      }
+      if (bytes >= limitBytes) await flush(false);
+    },
+    async finish(lastEntries) {
+      entries.push(...lastEntries);
+      await flush(true);
+      return parts;
+    }
+  };
 }
 
 // Fetch one conversation and download it. Resolves with { filename, artifactCount }.
@@ -328,6 +389,7 @@ if (typeof module !== 'undefined' && module.exports) {
     normalizeExportOptions,
     isNothingToExport,
     filterConversationsByUpdated,
+    buildFrontMatter,
     renderConversation,
     buildConversationExport,
     buildBulkEntries,
@@ -336,6 +398,8 @@ if (typeof module !== 'undefined' && module.exports) {
     countAttachmentRecords,
     bulkZipFilename,
     zipEntries,
+    DMT_PART_LIMIT_BYTES,
+    createPartWriter,
     exportConversationToFile,
     exportConversationsToZip,
   };

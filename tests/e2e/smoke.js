@@ -232,7 +232,7 @@ const check = (name, ok, detail) => { results.push({ name, ok }); console.log(`$
     });
   });
   check('every dropdown and its list rows have solid, readable colours',
-    dropdowns.length === 4 && dropdowns.every((d) => d.rowOpaque && d.controlOpaque && d.contrast >= 4.5),
+    dropdowns.length >= 4 && dropdowns.every((d) => d.rowOpaque && d.controlOpaque && d.contrast >= 4.5),
     JSON.stringify(dropdowns.map((d) => [d.id, d.rowOpaque, d.controlOpaque, Math.round(d.contrast * 10) / 10])));
 
   const [p1] = await Promise.all([panel.waitForEvent('download'), panel.locator('#downloadChat').click()]);
@@ -244,6 +244,19 @@ const check = (name, ok, detail) => { results.push({ name, ok }); console.log(`$
   check('"Download Entire Project" saves instructions, files, chats and a manifest',
     whole.name === 'Alpha project.zip' && ['instructions.md', 'files/brief.md', 'files/handbook.pdf', 'chats/Trip plan.md', 'manifest.json'].every((n) => whole.files.includes(n)),
     `${whole.name} ${JSON.stringify(whole.files)}`);
+
+  // Hand-off to Claude Code
+  const [pcc] = await Promise.all([panel.waitForEvent('download'), panel.locator('#moveToClaudeCode').click()]);
+  const handoff = await unzip(pcc);
+  await panel.waitForSelector('#handoffCard:not([hidden])', { timeout: 5000 });
+  check('"Move to Claude Code" lays the project out as CLAUDE.md, docs/ and chats/, then offers a prompt',
+    handoff.name === 'Alpha project_claude-code.zip'
+      && ['CLAUDE.md', 'docs/brief.md', 'docs/handbook.pdf', 'chats/Trip plan.md', 'manifest.json'].every((n) => handoff.files.includes(n))
+      && !handoff.files.includes('instructions.md')
+      && (await handoff.archive.file('CLAUDE.md').async('string')).includes('Always answer in French.')
+      && /Read CLAUDE\.md first/.test(await panel.inputValue('#handoffPrompt'))
+      && (await panel.locator('#handoffFile').textContent()) === 'Alpha project_claude-code.zip',
+    `${handoff.name} ${JSON.stringify(handoff.files)}`);
 
   // Export settings: a ZIP name and the Markdown file format
   await panel.locator('#settingsBox summary').click();
@@ -264,6 +277,15 @@ const check = (name, ok, detail) => { results.push({ name, ok }); console.log(`$
   await panel.fill('#dateFrom', '');
   await panel.fill('#zipName', '');
   await panel.selectOption('#fileFormat', 'native');
+
+  // Obsidian front matter on Markdown chats
+  await panel.check('#frontMatter');
+  const [pfm] = await Promise.all([panel.waitForEvent('download'), panel.locator('#downloadChat').click()]);
+  const withFrontMatter = (await readDownload(pfm)).data.toString();
+  check('front matter puts title, dates and link at the top of a Markdown chat',
+    withFrontMatter.startsWith('---\ntitle: "Trip plan"\n') && withFrontMatter.includes(`source: "https://claude.ai/chat/${IDS[0]}"`) && withFrontMatter.includes('\n---\n\n# Trip plan'),
+    withFrontMatter.slice(0, 80));
+  await panel.uncheck('#frontMatter');
 
   // Files and Chats explorer
   await panel.locator('#filesBox summary').click();
@@ -287,6 +309,81 @@ const check = (name, ok, detail) => { results.push({ name, ok }); console.log(`$
     JSON.stringify(accountManifest.counts));
   await panel.waitForFunction(() => /Saved 2 projects and 2 other chats in 1 ZIP file/.test(document.getElementById('notice').textContent), null, { timeout: 5000 });
 
+  // Sync to a folder. The folder picker cannot be driven from a test, so the
+  // engine runs against the browser's private file system: the same file API.
+  check('folder sync is offered in the tab view, waiting for a folder',
+    (await panel.locator('#syncCard').isVisible()) && (await panel.locator('#chooseSyncFolder').isVisible()) && (await panel.locator('#syncNow').isDisabled()));
+  const syncRun = () => panel.evaluate(async () => {
+    const root = await navigator.storage.getDirectory();
+    const target = await root.getDirectoryHandle('sync-test', { create: true });
+    const result = await syncAccountToFolder(state.orgId, target, state.projects, state.conversations, { format: 'markdown' }, {});
+    const walk = async (handle, prefix) => {
+      const found = [];
+      for await (const [name, child] of handle.entries()) {
+        if (child.kind === 'directory') found.push(...await walk(child, `${prefix}${name}/`));
+        else found.push(`${prefix}${name}`);
+      }
+      return found;
+    };
+    const files = (await walk(target, '')).sort();
+    const pdf = await (await (await (await (await (await target.getDirectoryHandle('Projects')).getDirectoryHandle('Alpha project')).getDirectoryHandle('files')).getFileHandle('handbook.pdf')).getFile()).arrayBuffer();
+    return { counts: result.counts, failures: result.failures.map((f) => f.name), files, pdf: Array.from(new Uint8Array(pdf)) };
+  });
+  apiCalls.length = 0;
+  const firstSync = await syncRun();
+  check('first sync writes the account as ordinary files',
+    JSON.stringify(firstSync.files) === JSON.stringify([
+      '.downloadmythings/sync-index.json', 'Chats/Budget_ Q4_Q1_.md', 'Chats/Trip plan.md',
+      'Projects/Alpha project/chats/Trip plan.md', 'Projects/Alpha project/files/brief.md', 'Projects/Alpha project/files/diagram.webp',
+      'Projects/Alpha project/files/handbook.pdf', 'Projects/Alpha project/files/meeting-notes.docx.txt', 'Projects/Alpha project/instructions.md',
+    ]) && firstSync.counts.written === 8 && JSON.stringify(firstSync.failures) === JSON.stringify(['budget.xlsx']),
+    JSON.stringify([firstSync.counts, firstSync.failures, firstSync.files]));
+  check('a synced file is byte-identical to what was served', sha256(Buffer.from(firstSync.pdf)) === sha256(PDF_BYTES));
+  apiCalls.length = 0;
+  const secondSync = await syncRun();
+  check('a second sync reads no chat and writes nothing',
+    secondSync.counts.written === 0 && secondSync.counts.unchanged === 8
+      && apiCalls.filter((c) => /chat_conversations\/[0-9a-f-]+$/.test(c.path) || /\/files\/f1\/contents$/.test(c.path)).length === 0,
+    JSON.stringify([secondSync.counts, apiCalls.length]));
+
+  // Backups: chosen projects now, then the schedule, then a scheduled run
+  await panel.selectOption('#backupScope', 'projects');
+  await panel.waitForSelector('#backupProjects li');
+  check('"Projects I choose" lists the projects and waits for a choice',
+    (await panel.locator('#backupProjects li').count()) === 2 && (await panel.locator('#backupNow').isDisabled()));
+  await panel.locator('#backupProjects li', { hasText: 'Alpha project' }).locator('input').check();
+  await panel.waitForFunction(() => !document.getElementById('backupNow').disabled);
+  const [pb] = await Promise.all([panel.waitForEvent('download'), panel.locator('#backupNow').click()]);
+  const chosenBackup = await unzip(pb);
+  check('"Back up now" saves the chosen projects in a dated ZIP, one folder each',
+    /^downloadmythings-backup-\d{8}-\d{6}\.zip$/.test(chosenBackup.name)
+      && chosenBackup.files.includes('Alpha project/instructions.md') && chosenBackup.files.includes('Alpha project/manifest.json')
+      && !chosenBackup.files.some((n) => n.startsWith('Beta/')),
+    `${chosenBackup.name} ${JSON.stringify(chosenBackup.files)}`);
+  await panel.waitForFunction(() => /^Last backup .*: Saved downloadmythings-backup-/.test(document.getElementById('backupLast').textContent), null, { timeout: 5000 });
+  check('the card records when the last backup ran and what it saved', true);
+
+  const backupAlarm = () => sw.evaluate(() => chrome.alarms.get('dmt-backup'));
+  await panel.selectOption('#backupSchedule', 'daily');
+  let alarm = await backupAlarm();
+  for (let i = 0; i < 20 && !alarm; i++) { await panel.waitForTimeout(100); alarm = await backupAlarm(); }
+  check('a daily schedule sets a daily alarm', Boolean(alarm) && alarm.periodInMinutes === 1440, JSON.stringify(alarm));
+  await panel.selectOption('#backupSchedule', 'off');
+  for (let i = 0; i < 20 && alarm; i++) { await panel.waitForTimeout(100); alarm = await backupAlarm(); }
+  check('switching the schedule off clears the alarm', !alarm, JSON.stringify(alarm));
+
+  // What the alarm does: open the panel with #backup-run, which backs up and closes itself
+  await panel.selectOption('#backupScope', 'everything');
+  await panel.waitForFunction(() => document.getElementById('backupProjects').hidden);
+  const scheduled = await context.newPage(); watch(scheduled, 'scheduled backup');
+  const [ps] = await Promise.all([scheduled.waitForEvent('download', { timeout: 30000 }), scheduled.goto(`chrome-extension://${extId}/panel.html#backup-run`)]);
+  const scheduledName = ps.suggestedFilename();
+  const closed = await scheduled.waitForEvent('close', { timeout: 25000 }).then(() => true, () => false);
+  const recorded = await panel.evaluate(() => new Promise((resolve) => chrome.storage.local.get(['backup'], (r) => resolve(r.backup))));
+  check('a scheduled run backs everything up without anyone clicking, records it, and closes its tab',
+    /^downloadmythings-everything-/.test(scheduledName) && closed && /^Saved 2 projects and 2 other chats/.test(recorded.lastResult),
+    `${scheduledName} closed=${closed} ${recorded.lastResult}`);
+
   // Library
   await panel.locator('.tab[data-tab="library"]').click();
   check('library lists every chat with its project', (await panel.locator('#libraryList li').count()) === 3
@@ -297,6 +394,32 @@ const check = (name, ok, detail) => { results.push({ name, ok }); console.log(`$
   check('library search narrows the list', (await panel.locator('#libraryCount').textContent()) === '1 of 3 chats');
   await panel.fill('#librarySearch', '');
   await panel.waitForFunction(() => document.querySelectorAll('#libraryList li').length === 3);
+  // Search inside messages: opt in, let the index build, then find words that are in no title
+  check('search inside messages is offered, not switched on by itself',
+    (await panel.locator('#deepSearchOffer').isVisible()) && !(await panel.locator('#deepSearchStatus').isVisible()));
+  apiCalls.length = 0;
+  await panel.locator('#enableDeepSearch').click();
+  await panel.waitForFunction(() => /Searching inside all 3 chats/.test(document.getElementById('deepSearchStatus').textContent), null, { timeout: 15000 });
+  check('the index reads each chat once', apiCalls.filter((c) => /chat_conversations\/[0-9a-f-]+$/.test(c.path)).length === 3, `${apiCalls.length} calls`);
+  await panel.fill('#librarySearch', 'totals below');
+  await panel.waitForFunction(() => document.querySelectorAll('#libraryList li').length === 1);
+  check('a phrase from inside a message finds its chat and shows where',
+    (await panel.locator('#libraryList li').getAttribute('data-id')) === IDS[2] && /Totals below/.test(await panel.locator('#libraryList .snippet').textContent()),
+    await panel.locator('#libraryList .snippet').textContent());
+  await panel.fill('#librarySearch', '"question in" trip');
+  await panel.waitForFunction(() => document.querySelectorAll('#libraryList li').length === 2);
+  check('every term must match, across title and messages', true);
+  await panel.fill('#librarySearch', 'totals trip');
+  await panel.waitForFunction(() => document.querySelectorAll('#libraryList li').length === 0);
+  await panel.fill('#librarySearch', '');
+  await panel.waitForFunction(() => document.querySelectorAll('#libraryList li').length === 3);
+  // Reopening the Library must not read the chats again
+  apiCalls.length = 0;
+  await panel.locator('.tab[data-tab="export"]').click();
+  await panel.locator('.tab[data-tab="library"]').click();
+  await panel.waitForTimeout(600);
+  check('an up-to-date index is not rebuilt', apiCalls.filter((c) => /chat_conversations\/[0-9a-f-]+$/.test(c.path)).length === 0, JSON.stringify(apiCalls.map((c) => c.path)));
+
   await panel.check('#librarySelectAll');
   check('select all ticks every chat shown', (await panel.locator('#libraryExport').textContent()) === 'Export selected (3)');
   const [p7] = await Promise.all([panel.waitForEvent('download'), panel.locator('#libraryExport').click()]);

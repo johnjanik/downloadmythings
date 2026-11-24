@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.3.0] - 2026-11-24
+
+### Added
+
+- **Sync to a folder** (Chrome and Edge): an incremental copy of the whole account as ordinary files. Each run reads only the conversations that changed and rewrites only the files whose content changed. It can be stopped and resumed, follows renames, and never deletes a file because its conversation is gone from claude.ai.
+- **Backups**: a card that backs up everything or chosen projects, as a dated ZIP or as an update to the sync folder. Automatic backups run every day or every week while the browser is open. The card shows when the last one ran and what it saved.
+- **Search inside messages** in the Library: full-text search over every chat from a private index kept on this computer, with an excerpt showing where the words were found and no cap on results. It is off until you switch it on.
+- **Move to Claude Code**: a project laid out as `CLAUDE.md`, `docs/` and `chats/`, with a prompt to paste into Claude Code.
+- **Front matter for Obsidian**: title, dates, model and link as YAML properties at the top of each Markdown chat.
+- **Stop** ends the requests already in flight, not only the ones still waiting.
+
+### Changed
+
+- Multi-project exports start a new ZIP file every 256 MB, as Export everything does, so memory use stays bounded.
+- The extension now asks for the `alarms` permission, which the backup schedule uses. It adds no install warning.
+- The `activeTab` permission is no longer requested. Nothing used it.
+- Added a privacy policy (`docs/PRIVACY.md`) and a publishing guide with store listing text (`docs/PUBLISHING.md`).
+
 ## [0.2.1] - 2026-11-24
 
 ### Fixed

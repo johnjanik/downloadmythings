@@ -12,6 +12,7 @@ const {
   bulkAttachmentPrefix,
   countAttachmentRecords,
   bulkZipFilename,
+  buildFrontMatter,
 } = exporter;
 
 // A two-message conversation; the assistant reply carries one artifact.
@@ -47,6 +48,7 @@ describe('normalizeExportOptions', () => {
       flattenArtifacts: false,
       artifactFormat: 'original',
       includeAttachments: false,
+      frontMatter: false,
     });
   });
 
@@ -78,6 +80,35 @@ describe('renderConversation', () => {
     const json = renderConversation(data, 'c-1', { format: 'json' });
     expect(json).toMatchObject({ ext: 'json', type: 'application/json' });
     expect(JSON.parse(json.content).uuid).toBe('c-1');
+  });
+});
+
+describe('Obsidian front matter', () => {
+  it('lists title, dates, model and link as YAML properties', () => {
+    expect(buildFrontMatter(conversation(), 'c-1')).toBe([
+      '---',
+      'title: "Trip plan"',
+      'created: "2026-03-01T10:00:00Z"',
+      'updated: "2026-03-01T10:05:00Z"',
+      'model: "claude-sonnet-4-6"',
+      'source: "https://claude.ai/chat/c-1"',
+      'tags: ["claude"]',
+      '---',
+      '',
+      '',
+    ].join('\n'));
+  });
+
+  it('quotes a title that would otherwise break YAML', () => {
+    const tricky = conversation({ name: 'Plan: "phase 2" #1' });
+    expect(buildFrontMatter(tricky, 'c-1')).toContain('title: "Plan: \\"phase 2\\" #1"');
+  });
+
+  it('is added to Markdown chats only when asked for', () => {
+    const data = conversation();
+    expect(renderConversation(data, 'c-1', { format: 'markdown', frontMatter: true }).content.startsWith('---\ntitle: "Trip plan"')).toBe(true);
+    expect(renderConversation(data, 'c-1', { format: 'markdown' }).content.startsWith('# Trip plan')).toBe(true);
+    expect(renderConversation(data, 'c-1', { format: 'text', frontMatter: true }).content.startsWith('---')).toBe(false);
   });
 });
 
