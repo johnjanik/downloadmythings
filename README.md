@@ -1,127 +1,98 @@
-# Claude Exporter
+# DownloadMyThings
 
-A browser extension for Chrome and Firefox that allows you to export your Claude.ai conversations and artifacts in various formats with support for bulk exports, artifact extraction, and conversation browsing.
+A free, open source browser extension for Chrome and Firefox that exports your own conversations and artifacts from claude.ai. Everything runs in your browser. There are no limits, no account and no server.
 
-## Features
+DownloadMyThings is an independent project. It is not affiliated with or endorsed by Anthropic.
 
-- 📥 **Export Individual Conversations** - Export any conversation directly from Claude.ai
-- 📚 **Bulk Export** - Export all or filtered conversations as a ZIP file
-- 🔍 **Browse & Search** - View all your conversations in a searchable table
-- 🔀 **Sort Conversations** - Sort by name, date, project, model, and more
-- 🌳 **Branch-Aware Export** - Correctly handles conversation branches
-- 📝 **Multiple Formats** - JSON (full data), Markdown, or Plain Text
-- 📦 **Artifact Export** - Extract artifacts (code, documents, etc.) as separate files
-- 🎯 **Flexible Export Options** - Choose to include conversations, artifacts inline, or artifacts as separate files
-- 🗂️ **ZIP Archives** - Bulk exports create organized ZIP files with conversations and artifacts
-- 🏷️ **Metadata Options** - Include or exclude timestamps, models, and other metadata
-- 🤖 **Complete Model Information** - Preserves and displays model information for all conversations
-- 🔮 **Smart Model Inference** - Automatically infers the correct model for conversations that used the default model at the time
-- 🔒 **Secure** - All data processing happens in your browser and is never sent anywhere
-- ☀️ **Light/Dark Mode** - Toggle between color schemes
+## Status
 
----
-### Installation
+Version 0.1.0 is the foundation release. It exports conversations and artifacts. Project export (knowledge files, instructions and a project's chats in one ZIP), PDF, attachments as files and scheduled backups are planned next.
 
-See [docs/INSTALL.md](docs/INSTALL.md) for installation instructions (browser stores, manual, and from source).
+## What it does today
 
----
-### Usage
+- **Export one conversation** from the toolbar popup, as Markdown, JSON or plain text
+- **Browse all conversations** in a searchable, sortable table, with project and model columns
+- **Bulk export** all or selected conversations into one ZIP
+- **Artifacts** kept inline, or extracted as separate files in nested or flat folders
+- **Every branch** of a conversation is kept in the JSON export
+- **Extended thinking** and metadata can be included or left out
+- **Export tracking**: conversations that are new or changed since their last export are marked
+- **Model history**: records which model each conversation started on, even after it is moved to a newer one
+- **Backup and restore** of the extension's own data (export history, model history, preferences)
+- **Light and dark themes**
 
-#### Export Current Conversation
-1. Navigate to any conversation on claude.ai
-2. Click the extension icon
-3. Choose your export format and metadata preferences
-4. Click "Export Current Conversation"
+## Privacy
 
-#### Browse All Conversations
-1. Click the extension icon
-2. Click "Browse All Conversations" (green button)
-3. In the browse page, you can:
-   - Search conversations by name
-   - Filter by model
-   - Sort by date or name
-   - Export individual conversations
-   - Export all filtered conversations as ZIP
-   
-#### Bulk Export
-1. In the browse page, select your format and filters
-2. Click "Export All"
-3. A progress dialog will show the export status
-4. Once complete, a ZIP file will download containing all conversations
+- Your conversations are read from your own signed-in claude.ai session and saved straight to your Downloads folder.
+- The only site the extension contacts is `claude.ai`. There is no analytics, no licence server and no install ID.
+- Its site access is limited to `claude.ai`. No page of the extension is exposed to other websites.
+- The source is public under the MIT licence, and release ZIPs are built reproducibly from a tagged commit, so a build can be checked against the code.
 
----
-### Export Formats
+## Install
 
-#### JSON
-- Complete data including all branches and metadata
-- Best for data preservation and programmatic use
-- Includes all message versions and conversation branches
+DownloadMyThings is not in the browser stores yet. To run it from source, see [docs/INSTALL.md](docs/INSTALL.md). The short version:
 
-#### Markdown
-- Human-readable format with formatting
-- Shows only the current conversation branch
-- Includes optional metadata (timestamps, model info)
-- Great for documentation or sharing
+```bash
+npm install
+```
 
-#### Plain Text
-- Simple format following Claude's prompt style
-- Uses "User:" and "Claude:" prefixes
-- Shows only the current conversation branch
-- Ideal for copying into other LLMs or text editors
+```bash
+npm run build
+```
 
----
-### Troubleshooting
+Then load `dist/chrome` as an unpacked extension in Chrome, or `dist/firefox/manifest.json` as a temporary add-on in Firefox.
 
-#### "Organization ID not configured"
-- Follow the setup steps in [docs/INSTALL.md](docs/INSTALL.md#configuration)
-- Make sure you're copying the complete UUID from the URL
+## Use
 
-#### "Not authenticated" error
-- Make sure you're logged into Claude.ai
-- Try refreshing the Claude.ai page
+1. Sign in to claude.ai.
+2. Click the DownloadMyThings icon.
+3. **Export Current Conversation** saves the conversation in the open tab. **Browse All Conversations** opens the table, where you can search, select and export many at once.
 
-#### Export fails for some conversations
-- Some very old conversations might have different data structures
-- Check the browser console for specific error messages
-- The ZIP export includes a summary file listing any failed exports
+The browse page talks to claude.ai directly, so it works without a claude.ai tab open. Your organization is detected automatically; if detection fails, set the Organization ID in the extension's options.
 
-#### Content Security Policy errors
-- Make sure you're using the latest version of the extension
-- Try reloading the extension from chrome://extensions/
+### Export formats
 
-**For browser-specific troubleshooting issues**, see [docs/INSTALL.md](docs/INSTALL.md#Troubleshooting)
+| Format | Contents |
+| --- | --- |
+| JSON | Everything the API returns, including every branch and all metadata |
+| Markdown | The current branch, readable, with optional metadata, thinking and artifacts |
+| Plain text | The current branch with `User:` and `Claude:` prefixes |
 
----
-### Known Limitations
+## Development
 
-- Rate limiting: The extension processes conversations in small batches to avoid overwhelming the API
-- Using a VPN may return a 403 error when trying to connect to the Claude API
-- Plaintext and markdown formats only export the currently selected branch in conversations with multiple branches
-- Large bulk exports may take several minutes
-- Some special content types (like artifacts) may not export perfectly
-- API does not preserve per-message model data
-  - `conversation.model` from the API is the *current* model only — when chats get bounced (deprecation, guardrails kicking to Sonnet 4, etc.) the original model is lost
+```
+src/                 the extension, one copy for every browser
+  lib/api.js         claude.ai client (direct calls, with a relay through an open tab as fallback)
+  lib/exporter.js    builds export files and ZIPs
+  lib/store.js       extension storage helpers
+  lib/utils.js       Markdown and text conversion, artifacts, model names, backup, diagnostics
+  vendor/            JSZip 3.10.1, unmodified
+scripts/manifest.mjs the manifest for each browser, generated from one definition
+scripts/build.mjs    copies src/ into dist/chrome and dist/firefox and writes each manifest
+tests/               unit tests (Vitest) and an end-to-end smoke test
+```
 
----
-### Privacy & Security
+| Command | What it does |
+| --- | --- |
+| `npm run build` | Build `dist/chrome` and `dist/firefox` |
+| `npm run package` | Build and also write a release ZIP for each browser |
+| `npm run check` | Syntax, missing-file and remote-resource checks |
+| `npm test` | Unit tests |
+| `npm run test:e2e` | Loads the built Chrome extension in Chromium against a stand-in for claude.ai. Needs Playwright; see the note at the top of `tests/e2e/smoke.js` |
 
-- **Local Processing**: All data processing happens in your browser
-- **No External Servers**: The extension doesn't send data anywhere
-- **Your Authentication**: Uses your existing Claude.ai session
-- **Open Source**: You can review all code before installation
+The version lives in `package.json` only. Files in `src/lib/` and `src/content.js` can be injected into a tab more than once, so they must not declare anything with `const`, `let` or `class` at the top level; a test enforces this.
 
----
-### Contributing
+The extension relies on claude.ai's internal web API, which is undocumented and can change without notice.
 
-Feel free to submit issues or pull requests if you find bugs or have suggestions for improvements!
+## Known limitations
 
----
-### Acknowledgments
+- Markdown and plain text exports contain only the currently selected branch.
+- The API reports only a conversation's current model. Model history starts from the first time the extension sees a conversation.
+- Attachments are exported as the text claude.ai extracted from them, not as the original files.
+- Large bulk exports are built in memory and can take several minutes.
 
-- **Original Project**: Forked from [socketteer/Claude-Conversation-Exporter](https://github.com/socketteer/Claude-Conversation-Exporter)
-- **Code Development**: Written in collaboration with Claude Code (Sonnet 4.5 and Opus 4.5, 4.6, 4.7)
-- **ZIP Library**: Uses [JSZip](https://stuk.github.io/jszip/) for creating ZIP archives
+## Credits and licence
 
----
+MIT; see [LICENSE](LICENSE).
 
-**Note**: This extension is not officially affiliated with Anthropic or Claude.ai. It's a community tool that uses the web interface's API endpoints.
+DownloadMyThings began as a fork of [Claude Exporter](https://github.com/agoramachina/claude-exporter) by agoramachina, which builds on [Claude Conversation Exporter](https://github.com/socketteer/Claude-Conversation-Exporter) by socketteer. It bundles [JSZip](https://stuk.github.io/jszip/) (MIT).
