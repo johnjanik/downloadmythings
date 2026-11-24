@@ -43,6 +43,24 @@ function isNothingToExport(options) {
 
 var DMT_NOTHING_TO_EXPORT = 'Nothing to export. Enable "Chats", "Attachments" or one of the artifact file options.';
 
+// Keep the conversations last updated inside a date range. `from` and `to`
+// are 'YYYY-MM-DD' strings from date inputs (local days, both inclusive);
+// either may be empty. A conversation with no usable date is kept.
+function filterConversationsByUpdated(conversations, from, to) {
+  const start = from ? new Date(`${from}T00:00:00`) : null;
+  const end = to ? new Date(`${to}T23:59:59.999`) : null;
+  const valid = (date) => date && !Number.isNaN(date.getTime());
+  if (!valid(start) && !valid(end)) return conversations;
+
+  return conversations.filter((conv) => {
+    const updated = new Date(conv.updated_at || conv.created_at || '');
+    if (Number.isNaN(updated.getTime())) return true;
+    if (valid(start) && updated < start) return false;
+    if (valid(end) && updated > end) return false;
+    return true;
+  });
+}
+
 // The conversation transcript in the chosen format.
 function renderConversation(data, conversationId, options) {
   const o = normalizeExportOptions(options);
@@ -309,6 +327,7 @@ if (typeof module !== 'undefined' && module.exports) {
     fileDateStamp,
     normalizeExportOptions,
     isNothingToExport,
+    filterConversationsByUpdated,
     renderConversation,
     buildConversationExport,
     buildBulkEntries,

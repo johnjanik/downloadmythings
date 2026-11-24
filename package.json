@@ -1,8 +1,8 @@
 {
   "name": "downloadmythings",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
-  "description": "Browser extension that exports your conversations and artifacts from claude.ai. Free, local and open source.",
+  "description": "Browser extension that downloads your projects, chats and files from claude.ai. Free, local and open source.",
   "license": "MIT",
   "repository": {
     "type": "git",

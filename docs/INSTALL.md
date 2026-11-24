@@ -43,7 +43,7 @@ A temporary add-on is removed when Firefox closes. A signed build that stays ins
 ## 3. First run
 
 1. Sign in to claude.ai in the same browser.
-2. Click the DownloadMyThings icon and choose **Browse All Conversations**, or open a conversation and choose **Export Current Conversation**.
+2. Click the DownloadMyThings icon. The panel opens, as a side panel where the browser has one. It shows the project or conversation in the current tab, or lets you pick a project.
 
 Your organization is detected automatically. If you see "Could not find your organization", open the extension's options and paste the Organization ID from [claude.ai/settings/account](https://claude.ai/settings/account).
 
@@ -52,7 +52,8 @@ Your organization is detected automatically. If you see "Could not find your org
 | Symptom | What to try |
 | --- | --- |
 | "claude.ai returned HTTP 401" or "HTTP 403" | Sign in to claude.ai in this browser, then reload the page. A VPN can also cause 403 responses |
-| The popup says "Open a conversation on claude.ai first" | The active tab must be a conversation, at an address like `claude.ai/chat/...` |
+| The panel says "Sign in to claude.ai" | Sign in on claude.ai in this browser, then press the refresh button on the project card |
+| The toolbar button does nothing | Switch "Open as" to Popup at the bottom of the panel, or open the panel from the browser's side panel menu |
 | Nothing downloads | Check that the browser is not blocking multiple downloads from the page |
 | Something else | Options, then **attach a diagnostics file**, and [open an issue](https://github.com/johnjanik/downloadmythings/issues). The file holds versions, counts and recent errors, with all IDs removed |
 

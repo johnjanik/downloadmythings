@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.2.0] - 2026-11-24
+
+### Added
+
+- **The panel**: one interface that opens as a side panel or a popup, chosen with a switch at its bottom. It works from any tab: it shows the conversation or project open in the current tab, and offers a project picker when there is none.
+- **Project export**: Download Entire Project, Download All Files and Download All Chats. A project ZIP holds `instructions.md`, `files/`, `chats/`, `artifacts/` and a `manifest.json` that records how faithful each file is (original, PDF rendition, extracted text, preview or missing) with its size and SHA-256.
+- **Export settings**: ZIP name, file format (native or Markdown), chat format, a date range for chats, chat attachments, thinking, metadata and artifacts.
+- **Export everything**: every project and every other chat in one action, written as several ZIP files when the account is large. Memory is included when claude.ai returns it.
+- **Library**: every chat in the account with its project and date, title search, select all, export, and its own tab.
+- **Files and Chats explorer** for a project, with a download button per row.
+- **Attachments as files**: uploads and pasted text saved beside the transcript, listed in `attachments.json`.
+- **PDF export** through the browser's print dialog, for one chat or several as one document with a contents list.
+- **A download button on claude.ai pages**, with a switch in Options.
+- **Projects view** on the table page, with multi-project export.
+
+### Changed
+
+- The colours and style follow the PracticallyZen design tokens, held in one `theme.css`. Dark is the default.
+- The old popup is replaced by the panel. Exports now run in the extension's own pages, so no claude.ai tab has to be open.
+- claude.ai calls are retried after a rate-limit answer.
+- Same-titled chats are numbered in list order, not in the order their downloads finished.
+
+### Notes
+
+- The project and file endpoints come from current open source exporters and are undocumented.
+- New permission on Chrome: `sidePanel`.
+
 ## [0.1.0] - 2026-11-24
 
 First release as DownloadMyThings. Forked from Claude Exporter 1.10.17 and diverged from it. For the history before the fork, see the [Claude Exporter changelog](https://github.com/agoramachina/claude-exporter/blob/main/docs/CHANGELOG.md).

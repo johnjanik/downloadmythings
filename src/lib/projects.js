@@ -25,7 +25,9 @@ function normalizeProjectOptions(options) {
     ...normalizeExportOptions(o),
     includeInstructions: o.includeInstructions !== false,
     includeKnowledge: o.includeKnowledge !== false,
-    includeProjectChats: o.includeProjectChats !== false
+    includeProjectChats: o.includeProjectChats !== false,
+    fileFormat: o.fileFormat === 'markdown' ? 'markdown' : 'native', // knowledge files: as stored, or text as .md
+    zipFilename: typeof o.zipFilename === 'string' ? o.zipFilename : ''
   };
 }
 
@@ -120,6 +122,7 @@ async function collectProject(orgId, project, conversations, options, root, hook
     const usedNames = new Set();
     for (let i = 0; i < items.length && !isCancelled(); i++) {
       step(`Knowledge file ${i + 1} of ${items.length}: ${items[i].name}`);
+      if (o.fileFormat === 'markdown') items[i].preferText = true;
       const { content, record } = await fetchFileItem(orgId, items[i], usedNames, 'files/');
       if (content !== null) entries.push({ path: `${root}${record.path}`, content });
       manifest.knowledge.push(record);
@@ -261,7 +264,9 @@ async function exportProjectsToZip(orgId, projects, conversations, options, hook
   const blob = await zipEntries(entries, (percent) => report('Creating ZIP file...', percent));
   if (isCancelled()) return { cancelled: true, filename: null, summary: null, manifests };
 
-  const filename = projectZipFilename(projects);
+  // The caller may name the ZIP (the panel's "ZIP name" setting)
+  const chosen = normalizeProjectOptions(options).zipFilename.trim();
+  const filename = chosen ? `${sanitizeFilename(chosen.replace(/\.zip$/i, ''))}.zip` : projectZipFilename(projects);
   downloadFile(blob, filename, 'application/zip');
   if (exportedChatIds.length > 0) await recordExportTimestamps(exportedChatIds);
   return { cancelled: false, filename, summary: summarizeProjectManifests(manifests), manifests };

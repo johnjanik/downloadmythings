@@ -107,6 +107,7 @@ const check = (name, ok, detail) => { results.push({ name, ok }); console.log(`$
     if (url.pathname === `/api/organizations/${ORG}/chat_conversations`) return json(list);
     const bin = (body, type) => route.fulfill({ status: 200, contentType: type, body });
     if (url.pathname === `/api/organizations/${ORG}/projects`) return json(projectList);
+    if (url.pathname === `/api/organizations/${ORG}/memories`) return json([{ uuid: 'mem-1', content: 'Prefers short answers' }]);
     if (url.pathname === `/api/organizations/${ORG}/projects/p1`) return json({ ...projectList[0], prompt_template: 'Always answer in French.' });
     if (url.pathname === `/api/organizations/${ORG}/projects/p2`) return json(projectList[1]);
     if (url.pathname === `/api/organizations/${ORG}/projects/p1/docs`) return json(projectDocs);
@@ -196,40 +197,131 @@ const check = (name, ok, detail) => { results.push({ name, ok }); console.log(`$
   await browse.locator('.view-tab[data-view="conversations"]').click();
   blockExtensionPages = false;
 
-  // --- 6. Popup: export the conversation open in the claude.ai tab
-  const popup = await context.newPage(); watch(popup, 'popup');
-  await popup.addInitScript(() => {
-    // The popup is opened as a tab here, so "the active tab" must point at the claude.ai tab
+  // --- 6. The panel, opened as a tab while a claude.ai conversation is the "active tab"
+  const unzip = async (download) => {
+    const file = await readDownload(download);
+    const archive = await JSZip.loadAsync(file.data);
+    return { name: file.name, archive, files: Object.keys(archive.files).filter((n) => !archive.files[n].dir).sort() };
+  };
+  const panel = await context.newPage(); watch(panel, 'panel');
+  await panel.addInitScript(() => {
+    // The panel is opened as a tab here, so "the active tab" must point at the claude.ai tab
     const realQuery = chrome.tabs.query.bind(chrome.tabs);
     chrome.tabs.query = (q, cb) => (q.active ? realQuery({ url: 'https://claude.ai/*' }, cb) : realQuery(q, cb));
   });
-  await popup.goto(`chrome-extension://${extId}/popup.html`);
-  check('popup shows name and version from the manifest',
-    (await popup.locator('#header-title').textContent()) === 'DownloadMyThings' && /^v\d+\.\d+\.\d+$/.test(await popup.locator('#header-version').textContent()));
-  await popup.selectOption('#format', 'text');
-  const [d5] = await Promise.all([claude.waitForEvent('download'), popup.locator('#exportCurrent').click()]);
-  const f5 = await readDownload(d5);
-  check('popup exports the open conversation from the claude.ai tab', f5.name === 'Trip plan.txt' && f5.data.toString().includes('User: Question in'), f5.name);
-  await popup.waitForFunction(() => document.getElementById('status').textContent.includes('exported successfully'), null, { timeout: 5000 });
+  await panel.goto(`chrome-extension://${extId}/panel.html`);
+  await panel.waitForFunction(() => /files/.test(document.getElementById('projectCounts').textContent) && !/Counting/.test(document.getElementById('projectCounts').textContent), null, { timeout: 15000 });
+  check('panel shows its version and the open conversation',
+    /^v\d+\.\d+\.\d+$/.test(await panel.locator('#versionLabel').textContent())
+      && (await panel.locator('#chatCard').isVisible()) && (await panel.locator('#chatName').textContent()) === 'Trip plan');
+  check('panel picks the open conversation\'s project and counts its files and chats',
+    (await panel.locator('#projectName').textContent()) === 'Alpha project'
+      && (await panel.locator('#projectCounts').textContent()) === '5 files · 1 chat',
+    await panel.locator('#projectCounts').textContent());
 
-  // Re-inject the content script (as after an update); exactly one copy must answer
-  const tabId = await popup.evaluate(() => new Promise((r) => chrome.tabs.query({ url: 'https://claude.ai/*' }, (t) => r(t[0].id))));
-  const injected = await popup.evaluate((id) => new Promise((r) => chrome.runtime.sendMessage({ action: 'ensureContentScript', tabId: id }, r)), tabId);
-  check('background re-injects the content script on request', injected && injected.success === true, JSON.stringify(injected));
-  let downloads = 0; const count = () => { downloads++; }; claude.on('download', count);
-  await popup.locator('#exportCurrent').click();
-  await popup.waitForFunction(() => document.getElementById('status').textContent.includes('exported successfully'), null, { timeout: 5000 });
-  await claude.waitForTimeout(800);
-  check('after re-injection one export produces one download', downloads === 1, `${downloads} downloads`);
-  claude.off('download', count);
+  const [p1] = await Promise.all([panel.waitForEvent('download'), panel.locator('#downloadChat').click()]);
+  const chatFile = await readDownload(p1);
+  check('"Download this chat" saves Markdown from the panel itself', chatFile.name === 'Trip plan.md' && chatFile.data.toString().includes('Question in'), chatFile.name);
 
-  // Popup "Export All" with chats off and no artifact files: nothing to export, no network
-  await popup.uncheck('#includeChats');
+  const [p2] = await Promise.all([panel.waitForEvent('download'), panel.locator('#downloadProject').click()]);
+  const whole = await unzip(p2);
+  check('"Download Entire Project" saves instructions, files, chats and a manifest',
+    whole.name === 'Alpha project.zip' && ['instructions.md', 'files/brief.md', 'files/handbook.pdf', 'chats/Trip plan.md', 'manifest.json'].every((n) => whole.files.includes(n)),
+    `${whole.name} ${JSON.stringify(whole.files)}`);
+
+  // Export settings: a ZIP name and the Markdown file format
+  await panel.locator('#settingsBox summary').click();
+  await panel.fill('#zipName', 'backup');
+  await panel.selectOption('#fileFormat', 'markdown');
+  const [p3] = await Promise.all([panel.waitForEvent('download'), panel.locator('#downloadFiles').click()]);
+  const filesOnly = await unzip(p3);
+  check('"Download All Files" uses the chosen ZIP name and saves text as Markdown',
+    filesOnly.name === 'backup_files.zip'
+      && JSON.stringify(filesOnly.files) === JSON.stringify(['files/brief.md', 'files/diagram.webp', 'files/handbook.pdf', 'files/meeting-notes.docx.md', 'manifest.json']),
+    `${filesOnly.name} ${JSON.stringify(filesOnly.files)}`);
+
+  // A date range that leaves the project's only chat out
+  await panel.fill('#dateFrom', '2027-01-01');
+  const [p4] = await Promise.all([panel.waitForEvent('download'), panel.locator('#downloadChats').click()]);
+  const chatsOnly = await unzip(p4);
+  check('"Download All Chats" honours the date range', chatsOnly.name === 'backup_chats.zip' && JSON.stringify(chatsOnly.files) === JSON.stringify(['manifest.json']), JSON.stringify(chatsOnly.files));
+  await panel.fill('#dateFrom', '');
+  await panel.fill('#zipName', '');
+  await panel.selectOption('#fileFormat', 'native');
+
+  // Files and Chats explorer
+  await panel.locator('#filesBox summary').click();
+  check('explorer lists the project\'s files and chats',
+    (await panel.locator('#filesList li').count()) === 5 && (await panel.locator('#chatsList li').count()) === 1
+      && (await panel.locator('#filesCount').textContent()) === '5');
+  const [p5] = await Promise.all([panel.waitForEvent('download'), panel.locator('#filesList li', { hasText: 'brief.md' }).locator('button').click()]);
+  check('a single file downloads from the explorer', (await readDownload(p5)).name === 'brief.md');
+
+  // Export everything
+  const [p6] = await Promise.all([panel.waitForEvent('download'), panel.locator('#everythingButton').click()]);
+  const everything = await unzip(p6);
+  const accountManifest = JSON.parse(await everything.archive.file('manifest.json').async('string'));
+  check('"Export everything" saves every project and every other chat in one ZIP',
+    /^downloadmythings-everything-\d{8}-\d{6}\.zip$/.test(everything.name)
+      && ['Projects/Alpha project/instructions.md', 'Projects/Alpha project/chats/Trip plan.md', 'Projects/Beta/manifest.json', 'Chats/Trip plan.md', 'Chats/Budget_ Q4_Q1_.md', 'memory.json', 'manifest.json'].every((n) => everything.files.includes(n)),
+    `${everything.name} ${JSON.stringify(everything.files)}`);
+  check('the account manifest counts what was saved and names what was not',
+    accountManifest.counts.projects === 2 && accountManifest.counts.otherChats === 2 && accountManifest.memory === 'memory.json'
+      && accountManifest.notIncluded.some((item) => item.what === 'styles') && accountManifest.parts.length === 1,
+    JSON.stringify(accountManifest.counts));
+  await panel.waitForFunction(() => /Saved 2 projects and 2 other chats in 1 ZIP file/.test(document.getElementById('notice').textContent), null, { timeout: 5000 });
+
+  // Library
+  await panel.locator('.tab[data-tab="library"]').click();
+  check('library lists every chat with its project', (await panel.locator('#libraryList li').count()) === 3
+    && (await panel.locator('#libraryCount').textContent()) === '3 chats'
+    && (await panel.locator(`#libraryList li[data-id="${IDS[0]}"] .meta`).textContent()) === 'Alpha project');
+  await panel.fill('#librarySearch', 'budget');
+  await panel.waitForFunction(() => document.querySelectorAll('#libraryList li').length === 1);
+  check('library search narrows the list', (await panel.locator('#libraryCount').textContent()) === '1 of 3 chats');
+  await panel.fill('#librarySearch', '');
+  await panel.waitForFunction(() => document.querySelectorAll('#libraryList li').length === 3);
+  await panel.check('#librarySelectAll');
+  check('select all ticks every chat shown', (await panel.locator('#libraryExport').textContent()) === 'Export selected (3)');
+  const [p7] = await Promise.all([panel.waitForEvent('download'), panel.locator('#libraryExport').click()]);
+  const picked = await unzip(p7);
+  check('library exports the selected chats as one ZIP',
+    /^downloadmythings-export-/.test(picked.name) && JSON.stringify(picked.files) === JSON.stringify(['Budget_ Q4_Q1_.md', 'Trip plan (2).md', 'Trip plan.md']),
+    JSON.stringify(picked.files));
+
+  // The panel on a tab that is not claude.ai: nothing is "open", so the user picks
   apiCalls.length = 0;
-  await popup.locator('#exportAll').click();
-  await popup.waitForFunction(() => document.getElementById('status').textContent.includes('Nothing to export'), null, { timeout: 5000 });
-  check('popup reports "nothing to export" without listing conversations first',
-    !apiCalls.some((c) => c.path.endsWith('/chat_conversations')), JSON.stringify(apiCalls.map((c) => c.path)));
+  const anywhere = await context.newPage(); watch(anywhere, 'panel on another tab');
+  await anywhere.goto(`chrome-extension://${extId}/panel.html`);
+  await anywhere.waitForFunction(() => document.getElementById('projectPicker').options.length === 3, null, { timeout: 15000 });
+  check('away from claude.ai the panel shows a picker and never a dead end',
+    !(await anywhere.locator('#chatCard').isVisible()) && (await anywhere.locator('#projectName').textContent()) === 'No project selected'
+      && (await anywhere.locator('#downloadProject').isDisabled()) && !(await anywhere.locator('#everythingButton').isDisabled())
+      && apiCalls.length > 0 && apiCalls.every((c) => c.from === 'extension'));
+  await anywhere.selectOption('#projectPicker', 'p2');
+  await anywhere.waitForFunction(() => document.getElementById('projectCounts').textContent === '0 files · 0 chats');
+  check('picking a project enables its downloads', (await anywhere.locator('#projectName').textContent()) === 'Beta' && !(await anywhere.locator('#downloadProject').isDisabled()));
+
+  // Side panel or popup: the toolbar button follows the stored choice
+  const toolbarState = () => sw.evaluate(async () => ({
+    popup: await chrome.action.getPopup({}),
+    opensPanel: (await chrome.sidePanel.getPanelBehavior()).openPanelOnActionClick,
+  }));
+  const before = await toolbarState();
+  check('side panel is the default: the toolbar button has no popup and opens the panel', before.popup === '' && before.opensPanel === true, JSON.stringify(before));
+  await anywhere.selectOption('#displayMode', 'popup');
+  await anywhere.waitForFunction(() => /opens a popup/.test(document.getElementById('notice').textContent));
+  let after = await toolbarState();
+  for (let i = 0; i < 20 && after.opensPanel; i++) { await anywhere.waitForTimeout(100); after = await toolbarState(); }
+  check('choosing "Popup" switches the toolbar button to the popup', /panel\.html$/.test(after.popup) && after.opensPanel === false, JSON.stringify(after));
+  await anywhere.selectOption('#displayMode', 'sidepanel');
+  await anywhere.close();
+
+  // Re-inject the content scripts (as after an update); the tab must still answer
+  const tabId = await panel.evaluate(() => new Promise((r) => chrome.tabs.query({ url: 'https://claude.ai/*' }, (t) => r(t[0].id))));
+  const injected = await panel.evaluate((id) => new Promise((r) => chrome.runtime.sendMessage({ action: 'ensureContentScript', tabId: id }, r)), tabId);
+  const pong = await panel.evaluate((id) => new Promise((r) => chrome.tabs.sendMessage(id, { action: 'ping' }, r)), tabId);
+  check('background re-injects the content scripts on request and the tab still answers', injected && injected.success === true && pong && pong.success === true, JSON.stringify([injected, pong]));
 
   // --- 7. Options page
   const options = await context.newPage(); watch(options, 'options');

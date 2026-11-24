@@ -1,12 +1,9 @@
 // Content script for claude.ai.
 //
-// It does two jobs:
-//   1. runs the exports the popup asks for, in the page, so a long export
-//      keeps going after the popup closes;
-//   2. relays API calls for extension pages whose direct call to claude.ai
-//      failed (see lib/api.js).
-//
-// The export and API logic lives in lib/; this file only routes messages.
+// It relays API calls for extension pages whose direct call to claude.ai was
+// refused (see lib/api.js). Exports themselves run in the extension's own
+// pages (the panel, the browse page) or from the in-page button
+// (page-button.js); this file only routes messages.
 
 (function () {
   // Skip if a live copy is already listening in this tab. After the extension
@@ -38,17 +35,6 @@
     return true; // keep the message channel open for the async answer
   }
 
-  function summarizeBulkExport(result) {
-    const response = { count: result.included };
-    if (result.failed > 0) {
-      const names = result.failures.map((failure) => `${failure.name}: ${failure.message}`).join('; ');
-      response.warnings = `Exported ${result.completed} of ${result.total} conversations. Some failed: ${names}`;
-    } else if (result.included === 0) {
-      response.warnings = 'No artifacts found in any conversation, so nothing was downloaded.';
-    }
-    return response;
-  }
-
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     switch (request.action) {
       case 'ping':
@@ -72,21 +58,6 @@
         return reply(sendResponse, apiGetBlob(request.path).then(blobToDataUrl).then((dataUrl) => ({ dataUrl })));
       case 'getConversation':
         return reply(sendResponse, getConversation(request.orgId, request.conversationId).then((conversation) => ({ conversation })));
-
-      // Exports started from the popup; `request` carries the export options
-      case 'exportConversation':
-        return reply(sendResponse, exportConversationToFile(request.orgId, request.conversationId, request));
-      case 'exportAllConversations':
-        if (isNothingToExport(request)) {
-          sendResponse({ success: false, error: DMT_NOTHING_TO_EXPORT });
-          return false;
-        }
-        return reply(
-          sendResponse,
-          listConversations(request.orgId)
-            .then((conversations) => exportConversationsToZip(request.orgId, conversations, request))
-            .then(summarizeBulkExport)
-        );
 
       default:
         return false;

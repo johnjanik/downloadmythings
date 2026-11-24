@@ -13,10 +13,26 @@ if (typeof module !== 'undefined' && module.exports && typeof recordModelSnapsho
   Object.assign(globalThis, require('./store.js'));
 }
 
+// claude.ai answers 429 (or a brief 5xx) when asked too fast. Wait and try
+// again a few times before giving up; a long export makes hundreds of calls.
+var dmtRetry = { attempts: 3, baseMs: 1500, maxMs: 30000 };
+
+async function fetchWithRetry(url, init) {
+  for (let attempt = 0; ; attempt++) {
+    const response = await fetch(url, init);
+    const retryable = response.status === 429 || response.status === 502 || response.status === 503 || response.status === 504;
+    if (!retryable || attempt >= dmtRetry.attempts) return response;
+
+    const header = response.headers && typeof response.headers.get === 'function' ? Number(response.headers.get('retry-after')) : NaN;
+    const wait = Number.isFinite(header) && header > 0 ? header * 1000 : dmtRetry.baseMs * Math.pow(2, attempt);
+    await new Promise((resolve) => setTimeout(resolve, Math.min(wait, dmtRetry.maxMs)));
+  }
+}
+
 async function apiGet(path) {
   let response;
   try {
-    response = await fetch(`${DMT_CLAUDE_ORIGIN}${path}`, {
+    response = await fetchWithRetry(`${DMT_CLAUDE_ORIGIN}${path}`, {
       credentials: 'include',
       headers: { Accept: 'application/json' }
     });
@@ -51,7 +67,7 @@ async function apiGetBlob(pathOrUrl) {
 
   let response;
   try {
-    response = await fetch(url.href, { credentials: 'include' });
+    response = await fetchWithRetry(url.href, { credentials: 'include' });
   } catch (cause) {
     const error = new Error(`Could not reach claude.ai (${cause.message})`);
     error.status = 0;
@@ -285,6 +301,12 @@ async function getFileBlob(pathOrUrl) {
   );
 }
 
+// Account memory. This endpoint is unconfirmed: callers must treat a failure
+// as "not available", not as an error.
+async function getAccountMemory(orgId) {
+  return apiGet(`/api/organizations/${orgId}/memories`);
+}
+
 async function getConversation(orgId, conversationId) {
   return directOrRelay(
     () => apiGet(conversationPath(orgId, conversationId)),
@@ -297,6 +319,8 @@ async function getConversation(orgId, conversationId) {
 // Node (vitest) only; in the browser these are plain globals.
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
+    dmtRetry,
+    fetchWithRetry,
     apiGet,
     apiGetBlob,
     blobToDataUrl,
@@ -318,6 +342,7 @@ if (typeof module !== 'undefined' && module.exports) {
     listProjectDocs,
     listProjectFiles,
     getFileBlob,
+    getAccountMemory,
     getConversation,
   };
 }
