@@ -85,6 +85,8 @@
       width: 100%; padding: 8px 10px; border-radius: 8px; font: inherit; color: var(--text-primary);
       background: var(--secondary-color); border: var(--hairline) solid var(--input-border);
     }
+    /* Dropdowns need a solid background: the browser draws their list (see theme.css) */
+    .field select, select.plain { background: var(--control-bg); }
     .field input:focus, .field select:focus { outline: none; border-color: var(--input-focus); box-shadow: 0 0 0 3px var(--focus-ring); }
     .range { display: flex; align-items: center; gap: 6px; }
     .check { display: flex; align-items: center; gap: 8px; color: var(--text-primary); }

@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.2.1] - 2026-11-24
+
+### Fixed
+
+- Dropdown lists in the panel (the project picker, the file and chat formats, and the Side panel / Popup switch) showed light text on a white list, so only the highlighted row could be read. Every dropdown and its list rows now have solid colours from the theme.
+
 ## [0.2.0] - 2026-11-24
 
 ### Added

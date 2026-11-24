@@ -219,6 +219,22 @@ const check = (name, ok, detail) => { results.push({ name, ok }); console.log(`$
       && (await panel.locator('#projectCounts').textContent()) === '5 files · 1 chat',
     await panel.locator('#projectCounts').textContent());
 
+  // Dropdown lists are drawn by the browser: the control and its rows need solid, contrasting colours
+  const dropdowns = await panel.evaluate(() => {
+    const parse = (value) => { const m = value.match(/rgba?\(([^)]+)\)/)[1].split(',').map(Number); return { r: m[0], g: m[1], b: m[2], a: m.length > 3 ? m[3] : 1 }; };
+    const luminance = (c) => [c.r, c.g, c.b].map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }).reduce((sum, v, i) => sum + v * [0.2126, 0.7152, 0.0722][i], 0);
+    return Array.from(document.querySelectorAll('select')).map((select) => {
+      const row = select.options[0];
+      const background = parse(getComputedStyle(row).backgroundColor);
+      const text = parse(getComputedStyle(row).color);
+      const [hi, lo] = [luminance(background), luminance(text)].sort((a, b) => b - a);
+      return { id: select.id, rowOpaque: background.a === 1, controlOpaque: parse(getComputedStyle(select).backgroundColor).a === 1, contrast: (hi + 0.05) / (lo + 0.05) };
+    });
+  });
+  check('every dropdown and its list rows have solid, readable colours',
+    dropdowns.length === 4 && dropdowns.every((d) => d.rowOpaque && d.controlOpaque && d.contrast >= 4.5),
+    JSON.stringify(dropdowns.map((d) => [d.id, d.rowOpaque, d.controlOpaque, Math.round(d.contrast * 10) / 10])));
+
   const [p1] = await Promise.all([panel.waitForEvent('download'), panel.locator('#downloadChat').click()]);
   const chatFile = await readDownload(p1);
   check('"Download this chat" saves Markdown from the panel itself', chatFile.name === 'Trip plan.md' && chatFile.data.toString().includes('Question in'), chatFile.name);
