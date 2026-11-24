@@ -309,6 +309,43 @@ const check = (name, ok, detail) => { results.push({ name, ok }); console.log(`$
     JSON.stringify(accountManifest.counts));
   await panel.waitForFunction(() => /Saved 2 projects and 2 other chats in 1 ZIP file/.test(document.getElementById('notice').textContent), null, { timeout: 5000 });
 
+  // Sync to a folder. The folder picker cannot be driven from a test, so the
+  // engine runs against the browser's private file system: the same file API.
+  check('folder sync is offered in the tab view, waiting for a folder',
+    (await panel.locator('#syncCard').isVisible()) && (await panel.locator('#chooseSyncFolder').isVisible()) && (await panel.locator('#syncNow').isDisabled()));
+  const syncRun = () => panel.evaluate(async () => {
+    const root = await navigator.storage.getDirectory();
+    const target = await root.getDirectoryHandle('sync-test', { create: true });
+    const result = await syncAccountToFolder(state.orgId, target, state.projects, state.conversations, { format: 'markdown' }, {});
+    const walk = async (handle, prefix) => {
+      const found = [];
+      for await (const [name, child] of handle.entries()) {
+        if (child.kind === 'directory') found.push(...await walk(child, `${prefix}${name}/`));
+        else found.push(`${prefix}${name}`);
+      }
+      return found;
+    };
+    const files = (await walk(target, '')).sort();
+    const pdf = await (await (await (await (await (await target.getDirectoryHandle('Projects')).getDirectoryHandle('Alpha project')).getDirectoryHandle('files')).getFileHandle('handbook.pdf')).getFile()).arrayBuffer();
+    return { counts: result.counts, failures: result.failures.map((f) => f.name), files, pdf: Array.from(new Uint8Array(pdf)) };
+  });
+  apiCalls.length = 0;
+  const firstSync = await syncRun();
+  check('first sync writes the account as ordinary files',
+    JSON.stringify(firstSync.files) === JSON.stringify([
+      '.downloadmythings/sync-index.json', 'Chats/Budget_ Q4_Q1_.md', 'Chats/Trip plan.md',
+      'Projects/Alpha project/chats/Trip plan.md', 'Projects/Alpha project/files/brief.md', 'Projects/Alpha project/files/diagram.webp',
+      'Projects/Alpha project/files/handbook.pdf', 'Projects/Alpha project/files/meeting-notes.docx.txt', 'Projects/Alpha project/instructions.md',
+    ]) && firstSync.counts.written === 8 && JSON.stringify(firstSync.failures) === JSON.stringify(['budget.xlsx']),
+    JSON.stringify([firstSync.counts, firstSync.failures, firstSync.files]));
+  check('a synced file is byte-identical to what was served', sha256(Buffer.from(firstSync.pdf)) === sha256(PDF_BYTES));
+  apiCalls.length = 0;
+  const secondSync = await syncRun();
+  check('a second sync reads no chat and writes nothing',
+    secondSync.counts.written === 0 && secondSync.counts.unchanged === 8
+      && apiCalls.filter((c) => /chat_conversations\/[0-9a-f-]+$/.test(c.path) || /\/files\/f1\/contents$/.test(c.path)).length === 0,
+    JSON.stringify([secondSync.counts, apiCalls.length]));
+
   // Library
   await panel.locator('.tab[data-tab="library"]').click();
   check('library lists every chat with its project', (await panel.locator('#libraryList li').count()) === 3

@@ -240,6 +240,18 @@
         <p>Your whole account: every project with its instructions, files and chats, and every other chat. Large accounts are saved as several ZIP files.</p>
         <button class="btn primary" id="everythingButton" disabled>Export everything</button>
       </section>
+
+      <section class="card" id="syncCard" hidden>
+        <h2>Sync to a folder</h2>
+        <p>Keeps a folder on this computer up to date with your whole account, as ordinary files. Each run writes only what is new or changed, and never deletes what you already have.</p>
+        <div class="pill" id="syncFolderName" hidden></div>
+        <div class="btn-row" id="syncControls" hidden>
+          <button class="btn" id="chooseSyncFolder">Choose folder...</button>
+          <button class="btn primary" id="syncNow" disabled>Sync now</button>
+        </div>
+        <button class="btn" id="openSync" hidden>Open folder sync</button>
+        <div class="hint" id="syncLast"></div>
+      </section>
     </main>
 
     <!-- ===================== Library ===================== -->
@@ -291,6 +303,7 @@
   <script src="lib/projects.js"></script>
   <script src="lib/account.js"></script>
   <script src="lib/search.js"></script>
+  <script src="lib/sync.js"></script>
   <script src="panel.js"></script>
   <script src="panel-library.js"></script>
 </body>

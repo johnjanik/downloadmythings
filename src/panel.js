@@ -16,7 +16,8 @@ const state = {
   chat: null,          // the open conversation, when there is one
   project: null,       // the project the card is showing
   knowledge: null,     // that project's files, once listed
-  job: null            // { cancelled } while an export runs
+  job: null,           // { cancelled } while an export runs
+  syncFolder: null     // the folder chosen for "Sync to a folder"
 };
 
 const $ = (id) => document.getElementById(id);
@@ -179,6 +180,7 @@ function renderProjectCard() {
   for (const id of ['downloadProject', 'downloadFiles', 'downloadChats', 'moveToClaudeCode']) $(id).disabled = !ready;
   $('everythingButton').disabled = !state.orgId || Boolean(state.job);
   $('downloadChat').disabled = Boolean(state.job);
+  renderSyncCard();
 }
 
 function renderExplorer() {
@@ -385,6 +387,7 @@ async function runJob(job) {
 
   try {
     let message = null;
+    let cancelledMessage = 'Export cancelled. ZIP files already saved stay on disk.';
 
     if (job.type === 'project') {
       const project = state.projects.find((item) => item.uuid === job.projectId)
@@ -398,6 +401,17 @@ async function runJob(job) {
       const everythingOptions = { ...options, format: options.format === 'pdf' ? 'markdown' : options.format };
       const result = await exportEverything(state.orgId, state.projects, inRange, everythingOptions, hooks);
       if (!result.cancelled) message = `Saved ${describeAccountExport(result.counts, result.parts.length)}`;
+    } else if (job.type === 'sync') {
+      const syncOptions = { ...options, format: options.format === 'pdf' ? 'markdown' : options.format };
+      const result = await syncAccountToFolder(state.orgId, state.syncFolder, state.projects, inRange, syncOptions, hooks);
+      const summary = describeSync(result.counts);
+      await storageSet('local', { lastSync: { at: new Date().toISOString(), folder: state.syncFolder.name, summary, cancelled: result.cancelled } });
+      if (result.failures.length > 0) console.warn('Folder sync problems:', result.failures);
+      cancelledMessage = `Sync stopped (${summary}). What was written stays in the folder, and the next run carries on from there.`;
+      if (!result.cancelled) {
+        message = `Synced to "${state.syncFolder.name}": ${summary}.`;
+        if (result.failures.length > 0) message += ` First problem: ${result.failures[0].name}: ${result.failures[0].message}`;
+      }
     } else if (job.type === 'chats') {
       const wanted = new Set(job.ids);
       const picked = state.conversations.filter((conv) => wanted.has(conv.uuid));
@@ -416,7 +430,7 @@ async function runJob(job) {
     }
 
     if (message) showNotice(message, 'info');
-    else showNotice('Export cancelled. ZIP files already saved stay on disk.', 'info');
+    else showNotice(cancelledMessage, 'info');
   } catch (error) {
     console.error('Export failed:', error);
     showNotice(`Export failed: ${error.message}`);
@@ -457,6 +471,66 @@ async function exportChats(ids) {
     return;
   }
   await startJob({ type: 'chats', ids, options });
+}
+
+// ---------------------------------------------------------------- sync to a folder
+
+function folderSyncAvailable() {
+  return typeof window.showDirectoryPicker === 'function'; // Chromium browsers; not Firefox
+}
+
+async function renderSyncCard() {
+  if (!folderSyncAvailable()) return;
+  const name = $('syncFolderName');
+  name.hidden = !state.syncFolder;
+  if (state.syncFolder) name.textContent = `Folder: ${state.syncFolder.name}`;
+  $('chooseSyncFolder').textContent = state.syncFolder ? 'Change folder...' : 'Choose folder...';
+  $('syncNow').disabled = !state.syncFolder || !state.orgId || Boolean(state.job);
+
+  const stored = await storageGet('local', ['lastSync']);
+  const last = stored.lastSync;
+  $('syncLast').textContent = last
+    ? `Last sync ${new Date(last.at).toLocaleString()} to "${last.folder}": ${last.summary}${last.cancelled ? ' (stopped early)' : ''}`
+    : '';
+}
+
+async function setUpSync() {
+  if (!folderSyncAvailable()) return;
+  $('syncCard').hidden = false;
+  // The folder picker needs an ordinary page, so the controls live in the tab view
+  const inTab = state.viewMode === 'tab';
+  $('syncControls').hidden = !inTab;
+  $('openSync').hidden = inTab;
+  state.syncFolder = await loadSyncFolder();
+  renderSyncCard();
+
+  $('openSync').addEventListener('click', () => {
+    chrome.tabs.create({ url: chrome.runtime.getURL('panel.html#sync') });
+    if (state.viewMode === 'popup') window.close();
+  });
+
+  $('chooseSyncFolder').addEventListener('click', async () => {
+    try {
+      const handle = await window.showDirectoryPicker({ id: 'downloadmythings-sync', mode: 'readwrite' });
+      await saveSyncFolder(handle);
+      state.syncFolder = handle;
+      renderSyncCard();
+    } catch (error) {
+      if (error.name !== 'AbortError') showNotice(`Could not open that folder: ${error.message}`);
+    }
+  });
+
+  $('syncNow').addEventListener('click', async () => {
+    // The browser may want to be asked again; this must happen inside the click
+    const access = { mode: 'readwrite' };
+    let permission = await state.syncFolder.queryPermission(access);
+    if (permission !== 'granted') permission = await state.syncFolder.requestPermission(access);
+    if (permission !== 'granted') {
+      showNotice('The browser did not allow writing to that folder. Choose the folder again.');
+      return;
+    }
+    runJob({ type: 'sync', options: readOptions() });
+  });
 }
 
 // ---------------------------------------------------------------- display mode
@@ -518,7 +592,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   $('popOut').hidden = state.viewMode === 'tab';
 
   document.querySelectorAll('.tab').forEach((button) => button.addEventListener('click', () => showTab(button.dataset.tab)));
-  showTab(location.hash.replace('#', ''));
+  showTab(location.hash === '#library' ? 'library' : 'export');
 
   $('popOut').addEventListener('click', () => {
     const tab = document.querySelector('.tab.active').dataset.tab;
@@ -560,6 +634,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   await loadOptions();
   await setUpDisplayMode();
+  await setUpSync();
+  if (location.hash === '#sync') $('syncCard').scrollIntoView();
   await loadAccount();
 
   // A side panel stays open while the user moves between tabs
