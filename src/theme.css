@@ -67,6 +67,7 @@
   --on-primary: var(--pz-ground);
   --secondary-color: rgba(255, 255, 255, 0.08);
   --secondary-hover: rgba(255, 255, 255, 0.14);
+  --control-bg: #2A2D2F; /* solid: see the note on select lists at the end of this file */
   --link-color: var(--pz-mint);
   --link-hover: var(--pz-mint-bright);
 
@@ -125,6 +126,7 @@
     --on-primary: #FFFFFF;
     --secondary-color: rgba(28, 28, 30, 0.06);
     --secondary-hover: rgba(28, 28, 30, 0.12);
+    --control-bg: #ECECF1;
     --link-color: var(--pz-mint-ink);
     --link-hover: var(--pz-mint-deep);
 
@@ -182,6 +184,7 @@
   --on-primary: #FFFFFF;
   --secondary-color: rgba(28, 28, 30, 0.06);
   --secondary-hover: rgba(28, 28, 30, 0.12);
+  --control-bg: #ECECF1;
   --link-color: var(--pz-mint-ink);
   --link-hover: var(--pz-mint-deep);
 
@@ -221,4 +224,18 @@ a:hover {
 input[type="checkbox"],
 input[type="radio"] {
   accent-color: var(--primary-color);
+}
+
+/* The list a <select> opens is drawn by the browser, not by the page. It takes
+   its text colour from the control but paints its own background, so a
+   translucent control ends up with light text on a white list. Give every
+   dropdown and every row in its list solid colours. */
+select {
+  background-color: var(--control-bg);
+  color: var(--text-primary);
+}
+select option,
+select optgroup {
+  background-color: var(--control-bg);
+  color: var(--text-primary);
 }
