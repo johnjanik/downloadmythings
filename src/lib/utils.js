@@ -797,7 +797,7 @@ function showImportModeModal(onConfirm) {
       .dmt-modal-overlay {
         position: fixed; inset: 0; background: rgba(0, 0, 0, 0.55);
         display: flex; align-items: center; justify-content: center;
-        z-index: 100000; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        z-index: 100000; font-family: var(--font-ui, -apple-system, BlinkMacSystemFont, sans-serif);
       }
       .dmt-modal {
         background: var(--bg-body, #ffffff);
@@ -825,7 +825,7 @@ function showImportModeModal(onConfirm) {
         background: var(--bg-body, #ffffff);
         font-size: 13px;
       }
-      .dmt-modal-option:hover { border-color: var(--primary-color, #5d44e8); }
+      .dmt-modal-option:hover { border-color: var(--primary-color, #9ED6C2); }
       .dmt-modal-option input { margin-right: 6px; vertical-align: middle; }
       .dmt-modal-option strong { font-weight: 600; }
       .dmt-modal-option-desc {
@@ -848,10 +848,10 @@ function showImportModeModal(onConfirm) {
         border: 1px solid var(--border-color, #e2e4e9) !important;
       }
       .dmt-modal-import {
-        background: var(--primary-color, #5d44e8);
-        color: #ffffff;
+        background: var(--primary-color, #9ED6C2);
+        color: var(--on-primary, #0B0D0E);
       }
-      .dmt-modal-import:hover { background: var(--primary-hover, #4a35ba); }
+      .dmt-modal-import:hover { background: var(--primary-hover, #C6EBDD); }
     `;
     document.head.appendChild(style);
   }

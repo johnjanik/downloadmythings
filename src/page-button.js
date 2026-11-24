@@ -68,7 +68,9 @@
 
   function paint(button, state) {
     button.dataset.state = state;
-    button.style.background = state === 'error' ? '#b3261e' : '#2563eb';
+    // Mint with near-black text, as in the rest of the extension; red on failure
+    button.style.background = state === 'error' ? '#B3261E' : '#9ED6C2';
+    button.style.color = state === 'error' ? '#FFFFFF' : '#0B0D0E';
     button.style.cursor = state === 'working' ? 'progress' : 'pointer';
     button.style.opacity = state === 'idle' ? '0.88' : '1';
   }
@@ -88,9 +90,8 @@
     style.padding = '8px 13px';
     style.border = 'none';
     style.borderRadius = '999px';
-    style.color = '#ffffff';
-    style.font = '500 13px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    style.boxShadow = '0 4px 14px rgba(0, 0, 0, 0.28)';
+    style.font = '600 13px/1 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif';
+    style.boxShadow = '0 4px 16px rgba(0, 0, 0, 0.35), inset 0 0.5px 0 rgba(255, 255, 255, 0.55)';
     style.transition = 'opacity 0.15s';
 
     var label = document.createElement('span');
