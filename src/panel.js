@@ -21,7 +21,7 @@ const state = {
 
 const $ = (id) => document.getElementById(id);
 const DEFAULT_OPTIONS = { format: 'markdown', includeMetadata: true };
-const SAVED_OPTION_IDS = ['fileFormat', 'format', 'includeAttachments', 'includeThinking', 'includeMetadata', 'includeArtifacts', 'extractArtifacts'];
+const SAVED_OPTION_IDS = ['fileFormat', 'format', 'includeAttachments', 'includeThinking', 'includeMetadata', 'includeArtifacts', 'extractArtifacts', 'frontMatter'];
 
 // ---------------------------------------------------------------- helpers
 
@@ -117,6 +117,7 @@ function readOptions() {
     includeMetadata: $('includeMetadata').checked,
     includeArtifacts: $('includeArtifacts').checked,
     extractArtifacts: $('extractArtifacts').checked,
+    frontMatter: $('frontMatter').checked,
     flattenArtifacts: false,
     artifactFormat: 'original',
     zipName: $('zipName').value.trim(),
@@ -175,7 +176,7 @@ function renderProjectCard() {
   $('zipName').placeholder = state.project ? (state.project.name || 'Project') : 'Same as the project name';
 
   const ready = Boolean(state.project) && Boolean(state.orgId) && !state.job;
-  for (const id of ['downloadProject', 'downloadFiles', 'downloadChats']) $(id).disabled = !ready;
+  for (const id of ['downloadProject', 'downloadFiles', 'downloadChats', 'moveToClaudeCode']) $(id).disabled = !ready;
   $('everythingButton').disabled = !state.orgId || Boolean(state.job);
   $('downloadChat').disabled = Boolean(state.job);
 }
@@ -335,14 +336,15 @@ async function saveKnowledgeFile(item) {
 
 // ---------------------------------------------------------------- jobs (long exports)
 
-// The three project buttons differ only in which parts they include
+// The project buttons differ only in which parts they include and how they lay them out
 function projectJob(part) {
   const options = readOptions();
   const base = options.zipName || state.project.name || 'Project';
   const parts = {
     all: { includeInstructions: true, includeKnowledge: true, includeProjectChats: true, zipFilename: base },
     files: { includeInstructions: false, includeKnowledge: true, includeProjectChats: false, zipFilename: `${base}_files` },
-    chats: { includeInstructions: false, includeKnowledge: false, includeProjectChats: true, zipFilename: `${base}_chats` }
+    chats: { includeInstructions: false, includeKnowledge: false, includeProjectChats: true, zipFilename: `${base}_chats` },
+    'claude-code': { includeInstructions: true, includeKnowledge: true, includeProjectChats: true, zipFilename: `${base}_claude-code`, layout: 'claude-code' }
   }[part];
   // A project ZIP holds files, so the print-to-PDF format falls back to Markdown
   return {
@@ -352,6 +354,13 @@ function projectJob(part) {
   };
 }
 
+// After "Move to Claude Code": the prompt to paste into Claude Code
+function showHandoff(filename) {
+  $('handoffFile').textContent = filename;
+  $('handoffPrompt').value = DMT_CLAUDE_CODE_PROMPT;
+  $('handoffCard').hidden = false;
+}
+
 function setProgress(label, percent) {
   $('progressLabel').textContent = label;
   $('progressBar').style.width = `${Math.max(0, Math.min(100, Math.round(percent || 0)))}%`;
@@ -359,7 +368,9 @@ function setProgress(label, percent) {
 
 async function runJob(job) {
   if (state.job) return;
-  state.job = { cancelled: false };
+  state.job = { cancelled: false, controller: new AbortController() };
+  setRequestSignal(state.job.controller.signal); // Cancel aborts requests already in flight
+  $('handoffCard').hidden = true;
   hideNotice();
   $('progressCard').hidden = false;
   setProgress('Preparing export...', 0);
@@ -379,7 +390,10 @@ async function runJob(job) {
       const project = state.projects.find((item) => item.uuid === job.projectId)
         || await getProject(state.orgId, job.projectId);
       const result = await exportProjectsToZip(state.orgId, [project], inRange, options, hooks);
-      if (!result.cancelled) message = `Saved ${result.filename}. ${describeProjectExport(result.summary)}`;
+      if (!result.cancelled) {
+        message = `Saved ${result.filename}. ${describeProjectExport(result.summary)}`;
+        if (options.layout === 'claude-code') showHandoff(result.filename);
+      }
     } else if (job.type === 'everything') {
       const everythingOptions = { ...options, format: options.format === 'pdf' ? 'markdown' : options.format };
       const result = await exportEverything(state.orgId, state.projects, inRange, everythingOptions, hooks);
@@ -407,6 +421,7 @@ async function runJob(job) {
     console.error('Export failed:', error);
     showNotice(`Export failed: ${error.message}`);
   } finally {
+    setRequestSignal(null);
     state.job = null;
     $('progressCard').hidden = true;
     renderProjectCard();
@@ -514,11 +529,23 @@ document.addEventListener('DOMContentLoaded', async () => {
   $('projectPicker').addEventListener('change', (event) => selectProject(event.target.value || null));
   $('downloadProject').addEventListener('click', () => startJob(projectJob('all')));
   $('downloadFiles').addEventListener('click', () => startJob(projectJob('files')));
+  $('moveToClaudeCode').addEventListener('click', () => startJob(projectJob('claude-code')));
+  $('copyHandoff').addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText($('handoffPrompt').value);
+      $('copyHandoff').textContent = 'Copied';
+    } catch (error) {
+      $('handoffPrompt').select(); // clipboard refused: leave the text selected to copy by hand
+    }
+  });
   $('downloadChats').addEventListener('click', () => startJob(projectJob('chats')));
   $('downloadChat').addEventListener('click', () => state.chat && saveChat(state.chat.uuid, state.chat.name));
   $('everythingButton').addEventListener('click', () => startJob({ type: 'everything', options: readOptions() }));
   $('cancelJob').addEventListener('click', () => {
-    if (state.job) state.job.cancelled = true;
+    if (state.job) {
+      state.job.cancelled = true;
+      state.job.controller.abort();
+    }
     setProgress('Cancelling...', 100);
   });
   $('settings').addEventListener('change', saveOptions);

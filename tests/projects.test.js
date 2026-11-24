@@ -284,6 +284,28 @@ describe('collectProject', () => {
     expect(describeProjectExport(summarizeProjectManifests([manifest]))).toBe('1 project: 1 chat, 1 attachment');
   });
 
+  it('lays a project out for Claude Code: CLAUDE.md, docs/ and Markdown chats', async () => {
+    stubClaude(routes());
+    const { entries, manifest } = await collectProject(ORG, project, conversations, { format: 'json', layout: 'claude-code' }, '');
+    expect(paths(entries)).toEqual(['CLAUDE.md', 'chats/Kickoff.md', 'docs/brief.md', 'docs/handbook.pdf', 'manifest.json']);
+
+    const claudeMd = entries.find((e) => e.path === 'CLAUDE.md').content;
+    expect(claudeMd.startsWith('# Alpha\n\nAlways answer in French.\n')).toBe(true);
+    expect(claudeMd).toContain('`docs/` holds the project\'s knowledge files');
+    expect(claudeMd).toContain('`chats/` holds earlier conversations');
+    expect(manifest.instructions.path).toBe('CLAUDE.md');
+    expect(manifest.knowledge.map((r) => r.path)).toEqual(['docs/brief.md', 'docs/handbook.pdf', null]);
+  });
+
+  it('writes CLAUDE.md for Claude Code even when the project has no instructions', async () => {
+    const bare = routes();
+    bare['/api/organizations/org-1/projects/p-1'] = json(project);
+    stubClaude(bare);
+    const { entries } = await collectProject(ORG, project, [], { layout: 'claude-code', includeKnowledge: false }, '');
+    expect(paths(entries)).toEqual(['CLAUDE.md', 'manifest.json']);
+    expect(entries.find((e) => e.path === 'CLAUDE.md').content).not.toContain('docs/');
+  });
+
   it('honours the per-part switches', async () => {
     const requested = stubClaude(routes());
     const { entries } = await collectProject(ORG, project, conversations, { includeKnowledge: false, includeProjectChats: false }, '');

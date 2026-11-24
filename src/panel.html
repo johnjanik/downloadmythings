@@ -94,6 +94,10 @@
     details[open] > summary { margin-bottom: 10px; }
     .settings { display: flex; flex-direction: column; gap: 10px; }
     .hint { font-size: 11px; color: var(--text-muted); }
+    .prompt {
+      width: 100%; resize: vertical; padding: 8px 10px; border-radius: 8px; font: inherit; color: var(--text-primary);
+      background: var(--secondary-color); border: var(--hairline) solid var(--input-border);
+    }
 
     .count {
       margin-left: 6px; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 500;
@@ -164,6 +168,7 @@
           <select id="projectPicker"></select>
         </label>
         <button class="btn primary" id="downloadProject" disabled>Download Entire Project</button>
+        <button class="btn" id="moveToClaudeCode" disabled title="A ZIP laid out for Claude Code: CLAUDE.md, docs/ and chats/">Move to Claude Code</button>
         <div class="btn-row">
           <button class="btn" id="downloadFiles" disabled>Download All Files</button>
           <button class="btn" id="downloadChats" disabled>Download All Chats</button>
@@ -206,8 +211,16 @@
             <label class="check"><input type="checkbox" id="includeMetadata"> Metadata (dates, model, link)</label>
             <label class="check"><input type="checkbox" id="includeArtifacts"> Artifacts inside the chat text</label>
             <label class="check"><input type="checkbox" id="extractArtifacts"> Artifacts as separate files</label>
+            <label class="check" title="Adds title, dates, model and link as YAML properties at the top of each Markdown chat"><input type="checkbox" id="frontMatter"> Front matter for Obsidian (Markdown chats)</label>
           </div>
         </details>
+      </section>
+
+      <section class="card" id="handoffCard" hidden>
+        <h2>Next: open it in Claude Code</h2>
+        <p>Unzip <span id="handoffFile"></span> into an empty folder, start Claude Code there, and paste this prompt.</p>
+        <textarea id="handoffPrompt" class="prompt" rows="4" readonly></textarea>
+        <button class="btn" id="copyHandoff">Copy prompt</button>
       </section>
 
       <section class="card" id="explorerCard" hidden>

@@ -31,7 +31,8 @@ function normalizeExportOptions(options) {
     extractArtifacts: Boolean(o.extractArtifacts),   // artifacts as files in nested folders
     flattenArtifacts: Boolean(o.flattenArtifacts),   // artifacts as files in one flat folder
     artifactFormat: o.artifactFormat || 'original',
-    includeAttachments: Boolean(o.includeAttachments) // uploads and pasted text as files
+    includeAttachments: Boolean(o.includeAttachments), // uploads and pasted text as files
+    frontMatter: Boolean(o.frontMatter)               // YAML front matter on Markdown chats (Obsidian)
   };
 }
 
@@ -62,12 +63,30 @@ function filterConversationsByUpdated(conversations, from, to) {
 }
 
 // The conversation transcript in the chosen format.
+// YAML front matter for a Markdown transcript: the properties Obsidian and
+// similar note tools read. Values are JSON strings, which are valid YAML.
+function buildFrontMatter(data, conversationId, extra) {
+  const fields = {
+    title: data.name || 'Untitled Conversation',
+    created: data.created_at || null,
+    updated: data.updated_at || null,
+    model: data.model || null,
+    source: conversationId ? `https://claude.ai/chat/${conversationId}` : null,
+    ...(extra || {})
+  };
+  const lines = Object.entries(fields)
+    .filter(([, value]) => value !== null && value !== undefined && value !== '')
+    .map(([key, value]) => `${key}: ${JSON.stringify(String(value))}`);
+  return `---\n${lines.join('\n')}\ntags: ["claude"]\n---\n\n`;
+}
+
 function renderConversation(data, conversationId, options) {
   const o = normalizeExportOptions(options);
   switch (o.format) {
     case 'markdown':
       return {
-        content: convertToMarkdown(data, o.includeMetadata, conversationId, o.includeArtifacts, o.includeThinking),
+        content: (o.frontMatter ? buildFrontMatter(data, conversationId, (options || {}).frontMatterExtra) : '')
+          + convertToMarkdown(data, o.includeMetadata, conversationId, o.includeArtifacts, o.includeThinking),
         ext: 'md',
         type: 'text/markdown'
       };
@@ -328,6 +347,7 @@ if (typeof module !== 'undefined' && module.exports) {
     normalizeExportOptions,
     isNothingToExport,
     filterConversationsByUpdated,
+    buildFrontMatter,
     renderConversation,
     buildConversationExport,
     buildBulkEntries,

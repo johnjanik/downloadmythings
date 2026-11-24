@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import api from '../src/lib/api.js';
 import store from '../src/lib/store.js';
 
-const { pickChatOrgId, conversationPath, projectsPath, apiGet, directOrRelay } = api;
+const { pickChatOrgId, conversationPath, projectsPath, apiGet, directOrRelay, setRequestSignal } = api;
 const { mergeModelSnapshots } = store;
 
 afterEach(() => {
@@ -67,6 +67,37 @@ describe('apiGet', () => {
   it('reports a network failure with status 0', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('Failed to fetch'); }));
     await expect(apiGet('/api/organizations')).rejects.toMatchObject({ status: 0 });
+  });
+});
+
+describe('cancelling', () => {
+  afterEach(() => setRequestSignal(null));
+
+  it('passes the export\'s abort signal to every request', async () => {
+    const controller = new AbortController();
+    const fetchMock = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({}) }));
+    vi.stubGlobal('fetch', fetchMock);
+    setRequestSignal(controller.signal);
+    await apiGet('/api/organizations');
+    expect(fetchMock.mock.calls[0][1].signal).toBe(controller.signal);
+  });
+
+  it('fails fast, without touching the network, once cancelled', async () => {
+    const controller = new AbortController();
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    setRequestSignal(controller.signal);
+    controller.abort();
+    await expect(apiGet('/api/organizations')).rejects.toMatchObject({ cancelled: true, message: 'Cancelled' });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('reports a request aborted in flight as cancelled, and never relays it through a tab', async () => {
+    const sendMessage = vi.fn();
+    vi.stubGlobal('chrome', { runtime: {}, tabs: { query: (query, callback) => callback([{ id: 1 }]), sendMessage } });
+    vi.stubGlobal('fetch', vi.fn(async () => { throw Object.assign(new Error('The operation was aborted'), { name: 'AbortError' }); }));
+    await expect(api.getConversation('org-1', 'c-1')).rejects.toMatchObject({ cancelled: true });
+    expect(sendMessage).not.toHaveBeenCalled();
   });
 });
 

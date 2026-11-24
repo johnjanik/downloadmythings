@@ -245,6 +245,19 @@ const check = (name, ok, detail) => { results.push({ name, ok }); console.log(`$
     whole.name === 'Alpha project.zip' && ['instructions.md', 'files/brief.md', 'files/handbook.pdf', 'chats/Trip plan.md', 'manifest.json'].every((n) => whole.files.includes(n)),
     `${whole.name} ${JSON.stringify(whole.files)}`);
 
+  // Hand-off to Claude Code
+  const [pcc] = await Promise.all([panel.waitForEvent('download'), panel.locator('#moveToClaudeCode').click()]);
+  const handoff = await unzip(pcc);
+  await panel.waitForSelector('#handoffCard:not([hidden])', { timeout: 5000 });
+  check('"Move to Claude Code" lays the project out as CLAUDE.md, docs/ and chats/, then offers a prompt',
+    handoff.name === 'Alpha project_claude-code.zip'
+      && ['CLAUDE.md', 'docs/brief.md', 'docs/handbook.pdf', 'chats/Trip plan.md', 'manifest.json'].every((n) => handoff.files.includes(n))
+      && !handoff.files.includes('instructions.md')
+      && (await handoff.archive.file('CLAUDE.md').async('string')).includes('Always answer in French.')
+      && /Read CLAUDE\.md first/.test(await panel.inputValue('#handoffPrompt'))
+      && (await panel.locator('#handoffFile').textContent()) === 'Alpha project_claude-code.zip',
+    `${handoff.name} ${JSON.stringify(handoff.files)}`);
+
   // Export settings: a ZIP name and the Markdown file format
   await panel.locator('#settingsBox summary').click();
   await panel.fill('#zipName', 'backup');
@@ -264,6 +277,15 @@ const check = (name, ok, detail) => { results.push({ name, ok }); console.log(`$
   await panel.fill('#dateFrom', '');
   await panel.fill('#zipName', '');
   await panel.selectOption('#fileFormat', 'native');
+
+  // Obsidian front matter on Markdown chats
+  await panel.check('#frontMatter');
+  const [pfm] = await Promise.all([panel.waitForEvent('download'), panel.locator('#downloadChat').click()]);
+  const withFrontMatter = (await readDownload(pfm)).data.toString();
+  check('front matter puts title, dates and link at the top of a Markdown chat',
+    withFrontMatter.startsWith('---\ntitle: "Trip plan"\n') && withFrontMatter.includes(`source: "https://claude.ai/chat/${IDS[0]}"`) && withFrontMatter.includes('\n---\n\n# Trip plan'),
+    withFrontMatter.slice(0, 80));
+  await panel.uncheck('#frontMatter');
 
   // Files and Chats explorer
   await panel.locator('#filesBox summary').click();
