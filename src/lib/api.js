@@ -33,6 +33,59 @@ async function apiGet(path) {
   return response.json();
 }
 
+// Fetch a file's bytes. Accepts a path or a URL taken from an API response, but
+// only ever talks to claude.ai: anything pointing elsewhere is refused, so the
+// session is never sent to another host.
+async function apiGetBlob(pathOrUrl) {
+  let url;
+  try {
+    url = new URL(pathOrUrl, DMT_CLAUDE_ORIGIN);
+  } catch (cause) {
+    url = null;
+  }
+  if (!url || url.origin !== DMT_CLAUDE_ORIGIN) {
+    const error = new Error('Not a claude.ai address');
+    error.status = -1;
+    throw error;
+  }
+
+  let response;
+  try {
+    response = await fetch(url.href, { credentials: 'include' });
+  } catch (cause) {
+    const error = new Error(`Could not reach claude.ai (${cause.message})`);
+    error.status = 0;
+    throw error;
+  }
+  if (!response.ok) {
+    const error = new Error(`claude.ai returned HTTP ${response.status}`);
+    error.status = response.status;
+    throw error;
+  }
+  const blob = await response.blob();
+  // An HTML page here is the web app or a sign-in page, not the file
+  if (blob.size === 0 || /^text\/html/i.test(blob.type)) {
+    const error = new Error(blob.size === 0 ? 'claude.ai returned an empty file' : 'claude.ai returned a web page instead of the file');
+    error.status = -1;
+    throw error;
+  }
+  return blob;
+}
+
+// Blobs cannot cross the messaging channel, so the relay carries them as data URLs.
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error || new Error('Could not read the file'));
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function dataUrlToBlob(dataUrl) {
+  return (await fetch(dataUrl)).blob();
+}
+
 function conversationsPath(orgId) {
   return `/api/organizations/${orgId}/chat_conversations`;
 }
@@ -43,6 +96,37 @@ function conversationPath(orgId, conversationId) {
 
 function projectsPath(orgId) {
   return `/api/organizations/${orgId}/projects`;
+}
+
+function projectPath(orgId, projectId) {
+  return `${projectsPath(orgId)}/${projectId}`;
+}
+
+// Where a file's bytes may be found, best first. Each candidate says how
+// faithful its bytes are to what was uploaded:
+//   original       the stored file, from the contents endpoint
+//   pdf-rendition  the PDF claude.ai serves for a document
+//   preview        a preview image (often a smaller WebP)
+//   thumbnail      a small thumbnail, the last resort
+// `file` is an entry from a project's file list or from a message's files.
+// The endpoint names come from claude.ai's own web app; they are undocumented.
+function fileDownloadCandidates(orgId, file) {
+  const uuid = file.file_uuid || file.uuid || null;
+  const candidates = [];
+  const add = (url, fidelity, source) => {
+    if (url && !candidates.some((c) => c.url === url)) candidates.push({ url, fidelity, source });
+  };
+
+  if (uuid) add(`/api/organizations/${orgId}/files/${uuid}/contents`, 'original', 'contents');
+  add(file.document_asset && file.document_asset.url, 'pdf-rendition', 'document_asset');
+  if (uuid && /\.pdf$/i.test(file.file_name || '')) add(`/api/${orgId}/files/${uuid}/document_pdf`, 'pdf-rendition', 'document_pdf');
+  add(file.preview_asset && file.preview_asset.url, 'preview', 'preview_asset');
+  add(file.preview_url, 'preview', 'preview_url');
+  if (uuid) add(`/api/${orgId}/files/${uuid}/preview`, 'preview', 'preview');
+  add(file.thumbnail_asset && file.thumbnail_asset.url, 'thumbnail', 'thumbnail_asset');
+  add(file.thumbnail_url, 'thumbnail', 'thumbnail_url');
+  if (uuid) add(`/api/${orgId}/files/${uuid}/thumbnail`, 'thumbnail', 'thumbnail');
+  return candidates;
 }
 
 // An account can belong to several organizations (for example a claude.ai org
@@ -161,6 +245,46 @@ async function listProjects(orgId) {
   );
 }
 
+// One project with its instructions (`prompt_template`).
+async function getProject(orgId, projectId) {
+  return directOrRelay(
+    () => apiGet(projectPath(orgId, projectId)),
+    'getProject',
+    { orgId, projectId },
+    (response) => response.project
+  );
+}
+
+// A project's knowledge documents, as text: [{ file_name, content, ... }]
+async function listProjectDocs(orgId, projectId) {
+  return directOrRelay(
+    () => apiGet(`${projectPath(orgId, projectId)}/docs`),
+    'listProjectDocs',
+    { orgId, projectId },
+    (response) => response.docs
+  );
+}
+
+// A project's uploaded files (PDFs, images, ...): [{ file_uuid, file_name, ... }]
+async function listProjectFiles(orgId, projectId) {
+  return directOrRelay(
+    () => apiGet(`${projectPath(orgId, projectId)}/files`),
+    'listProjectFiles',
+    { orgId, projectId },
+    (response) => response.files
+  );
+}
+
+// A file's bytes as a Blob, from a path or claude.ai URL.
+async function getFileBlob(pathOrUrl) {
+  return directOrRelay(
+    () => apiGetBlob(pathOrUrl),
+    'getFileBlob',
+    { path: pathOrUrl },
+    (response) => dataUrlToBlob(response.dataUrl)
+  );
+}
+
 async function getConversation(orgId, conversationId) {
   return directOrRelay(
     () => apiGet(conversationPath(orgId, conversationId)),
@@ -174,9 +298,14 @@ async function getConversation(orgId, conversationId) {
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     apiGet,
+    apiGetBlob,
+    blobToDataUrl,
+    dataUrlToBlob,
     conversationsPath,
     conversationPath,
     projectsPath,
+    projectPath,
+    fileDownloadCandidates,
     pickChatOrgId,
     canRelayThroughTab,
     relayToClaudeTab,
@@ -185,6 +314,10 @@ if (typeof module !== 'undefined' && module.exports) {
     detectOrgId,
     listConversations,
     listProjects,
+    getProject,
+    listProjectDocs,
+    listProjectFiles,
+    getFileBlob,
     getConversation,
   };
 }

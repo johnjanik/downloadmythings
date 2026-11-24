@@ -129,6 +129,16 @@ document.querySelectorAll('input[name="modelDisplay"]').forEach((radio) => {
   });
 });
 
+// Download button on claude.ai pages (page-button.js reads this setting live)
+chrome.storage.local.get(['showPageButton'], (result) => {
+  document.getElementById('showPageButton').checked = result.showPageButton !== false;
+});
+document.getElementById('showPageButton').addEventListener('change', (e) => {
+  chrome.storage.local.set({ showPageButton: e.target.checked }, () => {
+    showStatus('pageButtonStatus', e.target.checked ? 'The button is on.' : 'The button is off.', 'success');
+  });
+});
+
 // Contact & Diagnostics
 document.getElementById('generateDiagnosticsLink').addEventListener('click', (e) => {
   e.preventDefault();

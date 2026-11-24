@@ -32,7 +32,7 @@
     promise
       .then((result) => sendResponse({ success: true, ...result }))
       .catch((error) => {
-        console.error('DownloadMyThings request failed:', error);
+        console.debug('DownloadMyThings request failed:', error); // the caller reports it
         sendResponse({ success: false, error: error.message, details: error.stack });
       });
     return true; // keep the message channel open for the async answer
@@ -62,6 +62,14 @@
         return reply(sendResponse, listConversations(request.orgId).then((conversations) => ({ conversations })));
       case 'loadProjects':
         return reply(sendResponse, listProjects(request.orgId).then((projects) => ({ projects })));
+      case 'getProject':
+        return reply(sendResponse, getProject(request.orgId, request.projectId).then((project) => ({ project })));
+      case 'listProjectDocs':
+        return reply(sendResponse, listProjectDocs(request.orgId, request.projectId).then((docs) => ({ docs })));
+      case 'listProjectFiles':
+        return reply(sendResponse, listProjectFiles(request.orgId, request.projectId).then((files) => ({ files })));
+      case 'getFileBlob':
+        return reply(sendResponse, apiGetBlob(request.path).then(blobToDataUrl).then((dataUrl) => ({ dataUrl })));
       case 'getConversation':
         return reply(sendResponse, getConversation(request.orgId, request.conversationId).then((conversation) => ({ conversation })));
 

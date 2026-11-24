@@ -35,10 +35,41 @@ const full = (c, withArtifact) => ({
   ...c,
   current_leaf_message_uuid: 'm2',
   chat_messages: [
-    { uuid: 'm1', parent_message_uuid: 'root', sender: 'human', content: [{ type: 'text', text: `Question in ${c.uuid}` }] },
-    { uuid: 'm2', parent_message_uuid: 'm1', sender: 'assistant', content: [{ type: 'text', text: 'Answer. ' + (withArtifact ? '<antArtifact identifier="a" type="application/vnd.ant.code" language="python" title="script">print(1)</antArtifact>' : '') }] },
+    {
+      uuid: 'm1', parent_message_uuid: 'root', sender: 'human', content: [{ type: 'text', text: `Question in ${c.uuid}` }],
+      // Only the first conversation carries uploads: the PDF from the stand-in project and some pasted text
+      files: c.uuid === IDS[0] ? [{ file_uuid: 'f1', file_name: 'handbook.pdf', file_kind: 'document' }] : [],
+      attachments: c.uuid === IDS[0] ? [{ file_name: 'pasted.txt', extracted_content: 'pasted words' }] : [],
+    },
+    { uuid: 'm2', parent_message_uuid: 'm1', sender: 'assistant', content: [{ type: 'text', text: 'Answer. ' + (withArtifact ? '<antArtifact identifier="a" type="application/vnd.ant.code" language="python" title="script">print(1)</antArtifact>' : HOSTILE_MARKDOWN) }] },
   ],
 });
+
+// Stand-in project: one file of each kind a real project tends to hold
+const PDF_BYTES = Buffer.from('%PDF-1.7 stand-in handbook');
+const WEBP_BYTES = Buffer.from('RIFF....WEBP stand-in preview');
+const sha256 = (data) => require('crypto').createHash('sha256').update(data).digest('hex');
+const projectList = [
+  { uuid: 'p1', name: 'Alpha project', description: 'Launch work', created_at: '2026-01-05T09:00:00Z', updated_at: '2026-03-01T10:05:00Z' },
+  { uuid: 'p2', name: 'Beta', created_at: '2026-02-05T09:00:00Z', updated_at: '2026-02-06T09:00:00Z' },
+];
+const projectDocs = [{ file_name: 'brief.md', content: '# Brief' }, { file_name: 'meeting-notes.docx', content: 'extracted words' }];
+const projectFiles = [
+  { file_uuid: 'f1', file_name: 'handbook.pdf' },      // served in full by the contents endpoint
+  { file_uuid: 'f2', file_name: 'diagram.png' },       // only a WebP preview is served
+  { file_uuid: 'f3', file_name: 'budget.xlsx' },       // nothing is served
+  { file_uuid: 'f4', file_name: 'meeting-notes.docx' } // only its extracted text exists
+];
+
+// A reply that tries everything a transcript renderer must not fall for
+const HOSTILE_MARKDOWN = [
+  'Totals below.', '',
+  '<script>window.__xss = 1</script> <img src="https://claude.ai/pixel.png" onerror="window.__xss = 1">', '',
+  '![remote image](https://claude.ai/remote.png)', '',
+  '[bad link](javascript:window.__xss=1) and [good link](https://example.com/report)', '',
+  '| Quarter | Total |', '| --- | --- |', '| Q4 | 12 |', '',
+  '```js', 'const x = "<b>not bold</b>";', '```',
+].join('\n');
 
 const results = [];
 const check = (name, ok, detail) => { results.push({ name, ok }); console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? '  [' + detail + ']' : ''}`); };
@@ -52,6 +83,10 @@ const check = (name, ok, detail) => { results.push({ name, ok }); console.log(`$
     args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`],
   });
 
+  // Headless Chromium has no print dialog: count the calls instead
+  await context.addInitScript(() => { window.print = () => { window.__printCalls = (window.__printCalls || 0) + 1; }; });
+  const pageRequests = []; // non-API requests to the stand-in, such as images a page tried to load
+
   let blockExtensionPages = false; // when true, direct calls from extension pages get HTTP 403
   const apiCalls = [];
   await context.route('https://claude.ai/**', async (route) => {
@@ -60,6 +95,7 @@ const check = (name, ok, detail) => { results.push({ name, ok }); console.log(`$
     let from = '';
     try { from = request.frame().url(); } catch (e) { /* service worker */ }
     if (!url.pathname.startsWith('/api/')) {
+      pageRequests.push(url.pathname);
       return route.fulfill({ status: 200, contentType: 'text/html', body: '<html><head><title>stand-in</title></head><body>stand-in for claude.ai</body></html>' });
     }
     apiCalls.push({ path: url.pathname, from: from.startsWith('chrome-extension://') ? 'extension' : 'tab' });
@@ -69,7 +105,15 @@ const check = (name, ok, detail) => { results.push({ name, ok }); console.log(`$
     const json = (body) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
     if (url.pathname === '/api/organizations') return json([{ uuid: 'api-org', capabilities: ['api'] }, { uuid: ORG, capabilities: ['chat'] }]);
     if (url.pathname === `/api/organizations/${ORG}/chat_conversations`) return json(list);
-    if (url.pathname === `/api/organizations/${ORG}/projects`) return json([{ uuid: 'p1', name: 'Alpha project' }]);
+    const bin = (body, type) => route.fulfill({ status: 200, contentType: type, body });
+    if (url.pathname === `/api/organizations/${ORG}/projects`) return json(projectList);
+    if (url.pathname === `/api/organizations/${ORG}/projects/p1`) return json({ ...projectList[0], prompt_template: 'Always answer in French.' });
+    if (url.pathname === `/api/organizations/${ORG}/projects/p2`) return json(projectList[1]);
+    if (url.pathname === `/api/organizations/${ORG}/projects/p1/docs`) return json(projectDocs);
+    if (url.pathname === `/api/organizations/${ORG}/projects/p1/files`) return json(projectFiles);
+    if (/\/projects\/p2\/(docs|files)$/.test(url.pathname)) return json([]);
+    if (url.pathname === `/api/organizations/${ORG}/files/f1/contents`) return bin(PDF_BYTES, 'application/pdf');
+    if (url.pathname === `/api/${ORG}/files/f2/preview`) return bin(WEBP_BYTES, 'image/webp');
     const m = url.pathname.match(/chat_conversations\/([a-f0-9-]+)$/);
     if (m) { const c = list.find((x) => x.uuid === m[1]); if (c) return json(full(c, c.uuid !== IDS[2])); }
     return route.fulfill({ status: 404, contentType: 'application/json', body: '{}' });
@@ -144,6 +188,12 @@ const check = (name, ok, detail) => { results.push({ name, ok }); console.log(`$
   await browse.uncheck('#flattenArtifacts'); await browse.check('#includeChats');
   const [d4] = await Promise.all([browse.waitForEvent('download'), browse.locator('.btn-export').first().click()]);
   check('single export also works through the relay', /\.json$/.test((await readDownload(d4)).name));
+  await browse.locator('.view-tab[data-view="projects"]').click();
+  const [d4p] = await Promise.all([browse.waitForEvent('download'), browse.locator('tr[data-id="p1"] .btn-export-project').click()]);
+  const relayZip = await JSZip.loadAsync((await readDownload(d4p)).data);
+  const relayedPdf = await relayZip.file('files/handbook.pdf').async('nodebuffer');
+  check('file bytes survive the relay unchanged', sha256(relayedPdf) === sha256(PDF_BYTES));
+  await browse.locator('.view-tab[data-view="conversations"]').click();
   blockExtensionPages = false;
 
   // --- 6. Popup: export the conversation open in the claude.ai tab
@@ -192,15 +242,135 @@ const check = (name, ok, detail) => { results.push({ name, ok }); console.log(`$
   check('options links to our issue tracker, not upstream\'s email',
     (await options.locator('a[href="https://github.com/johnjanik/downloadmythings/issues"]').count()) === 1 && !(await options.content()).includes('mailto:'));
 
-  // --- 8. Pages are not reachable from websites
+  // --- 8. Projects view: export one project, then all
+  await browse.bringToFront();
+  await browse.reload();
+  await browse.waitForSelector('#tableContent table tbody tr', { timeout: 15000 });
+  await browse.selectOption('#exportFormat', 'markdown');
+  await browse.check('#extractArtifacts');
+  await browse.locator('.view-tab[data-view="projects"]').click();
+  await browse.waitForSelector('tr[data-id="p1"]');
+  check('projects view lists projects with their chat counts',
+    (await browse.locator('#tableContent tbody tr').count()) === 2
+      && (await browse.locator('tr[data-id="p1"] td').nth(1).textContent()).trim() === '1'
+      && /Showing 2 of 2 projects/.test(await browse.locator('#stats').textContent()));
+  check('project options appear only in the projects view', await browse.locator('#projectOptions').isVisible());
+
+  const [d6] = await Promise.all([browse.waitForEvent('download'), browse.locator('tr[data-id="p1"] .btn-export-project').click()]);
+  const f6 = await readDownload(d6);
+  const pzip = await JSZip.loadAsync(f6.data);
+  const pnames = Object.keys(pzip.files).filter((n) => !pzip.files[n].dir).sort();
+  console.log('      zip:', f6.name, JSON.stringify(pnames));
+  check('a single project is saved as "<Project name>.zip" without a top folder', f6.name === 'Alpha project.zip' && pnames.includes('manifest.json'));
+  check('project ZIP holds instructions, knowledge files, chats and artifacts',
+    ['instructions.md', 'files/brief.md', 'files/handbook.pdf', 'files/diagram.webp', 'files/meeting-notes.docx.txt', 'chats/Trip plan.md', 'artifacts/Trip plan/script.py']
+      .every((n) => pnames.includes(n)), JSON.stringify(pnames));
+  check('instructions are saved verbatim', (await pzip.file('instructions.md').async('string')) === 'Always answer in French.');
+  check('the PDF is byte-identical to what was served', sha256(await pzip.file('files/handbook.pdf').async('nodebuffer')) === sha256(PDF_BYTES));
+  const pm = JSON.parse(await pzip.file('manifest.json').async('string'));
+  const fidelity = Object.fromEntries(pm.knowledge.map((r) => [r.name, r.fidelity]));
+  check('manifest records how faithful each knowledge file is',
+    JSON.stringify(fidelity) === JSON.stringify({ 'brief.md': 'original', 'meeting-notes.docx': 'extracted-text', 'handbook.pdf': 'original', 'diagram.png': 'preview', 'budget.xlsx': 'missing' }),
+    JSON.stringify(fidelity));
+  check('manifest hash matches the saved file', pm.knowledge.find((r) => r.name === 'handbook.pdf').sha256 === sha256(PDF_BYTES));
+  check('the file claude.ai would not serve is reported, not silently dropped',
+    !pnames.some((n) => n.includes('budget')) && /tried/i.test(pm.knowledge.find((r) => r.name === 'budget.xlsx').note || ''));
+  const toast = (await browse.locator('#toast').textContent()).trim();
+  check('the summary names each fidelity', toast === 'Exported 1 project: 5 knowledge files (2 original, 1 extracted-text, 1 preview, 1 missing), 1 chat', toast);
+
+  const [d7] = await Promise.all([browse.waitForEvent('download'), browse.locator('#exportAllBtn').click()]);
+  const f7 = await readDownload(d7);
+  const names7 = Object.keys((await JSZip.loadAsync(f7.data)).files).filter((n) => !n.endsWith('/')).sort();
+  check('several projects go into one ZIP with a folder each',
+    /^downloadmythings-projects-\d{8}-\d{6}\.zip$/.test(f7.name) && names7.includes('Alpha project/instructions.md') && names7.includes('Beta/manifest.json') && !names7.includes('Beta/instructions.md'),
+    `${f7.name} ${names7.length} files`);
+
+  // Project export with attachments switched on
+  await browse.check('#includeAttachments');
+  const [d8] = await Promise.all([browse.waitForEvent('download'), browse.locator('tr[data-id="p1"] .btn-export-project').click()]);
+  const azip = await JSZip.loadAsync((await readDownload(d8)).data);
+  const am = JSON.parse(await azip.file('manifest.json').async('string'));
+  check('project export saves chat attachments beside the chats',
+    azip.file('attachments/Trip plan/handbook.pdf') !== null && azip.file('attachments/Trip plan/pasted.txt') !== null
+      && am.chats[0].attachments.length === 2 && am.chats[0].attachments.every((r) => r.fidelity === 'original'),
+    JSON.stringify(am.chats[0].attachments.map((r) => [r.path, r.fidelity])));
+
+  await browse.locator('.view-tab[data-view="conversations"]').click();
+  await browse.waitForSelector('tr[data-id="' + IDS[0] + '"]');
+
+  // Conversations with attachments: one chat becomes a ZIP; a bulk export lists them in attachments.json
+  await browse.uncheck('#extractArtifacts');
+  const [d9] = await Promise.all([browse.waitForEvent('download'), browse.locator(`tr[data-id="${IDS[0]}"] .btn-export`).click()]);
+  const f9 = await readDownload(d9);
+  const names9 = Object.keys((await JSZip.loadAsync(f9.data)).files).filter((n) => !n.endsWith('/')).sort();
+  check('one chat with attachments downloads as a ZIP with the uploads as files',
+    f9.name === 'Trip plan.zip' && JSON.stringify(names9) === JSON.stringify(['Trip plan.md', 'attachments.json', 'attachments/handbook.pdf', 'attachments/pasted.txt']),
+    `${f9.name} ${JSON.stringify(names9)}`);
+  const [d10] = await Promise.all([browse.waitForEvent('download'), browse.locator('#exportAllBtn').click()]);
+  const bzip = await JSZip.loadAsync((await readDownload(d10)).data);
+  const names10 = Object.keys(bzip.files).filter((n) => !n.endsWith('/')).sort();
+  check('bulk export files attachments per chat and lists them',
+    // Newest first, so the older "Trip plan" (the one with uploads) is filed as "Trip plan (2)"
+    names10.includes('attachments/Trip plan (2)/handbook.pdf') && names10.includes('attachments.json') && names10.includes('Trip plan.md')
+      && !names10.some((n) => n.startsWith('attachments/Trip plan/'))
+      && sha256(await bzip.file('attachments/Trip plan (2)/handbook.pdf').async('nodebuffer')) === sha256(PDF_BYTES),
+    JSON.stringify(names10));
+  await browse.uncheck('#includeAttachments');
+  check('switching back shows conversations again', (await browse.locator('#tableContent tbody tr').count()) === 3 && !(await browse.locator('#projectOptions').isVisible()));
+
+  // --- 9. PDF: the print page renders a transcript safely and opens the print dialog
+  await browse.selectOption('#exportFormat', 'pdf');
+  const [printPage] = await Promise.all([context.waitForEvent('page'), browse.locator(`tr[data-id="${IDS[2]}"] .btn-export`).click()]);
+  watch(printPage, 'print');
+  await printPage.waitForSelector('#printButton:not([disabled])', { timeout: 15000 });
+  check('print page titles the document after the conversation and opens the print dialog once',
+    (await printPage.title()) === 'Budget: Q4/Q1?' && (await printPage.evaluate(() => window.__printCalls)) === 1,
+    `${await printPage.title()} / ${await printPage.evaluate(() => window.__printCalls)} print calls`);
+  const rendered = await printPage.evaluate(() => {
+    const main = document.getElementById('content');
+    return {
+      forbidden: main.querySelectorAll('script, img, iframe, style, [onerror], [onclick]').length,
+      badLinks: Array.from(main.querySelectorAll('a')).filter((a) => !/^(https?:|mailto:|#)/.test(a.getAttribute('href') || '#')).length,
+      goodLink: main.querySelector('a[href="https://example.com/report"]') !== null,
+      table: main.querySelectorAll('table td').length,
+      code: main.querySelector('pre code') ? main.querySelector('pre code').textContent : '',
+      text: main.textContent,
+      xss: window.__xss || 0,
+    };
+  });
+  check('raw HTML in a message is shown as text and never becomes an element',
+    rendered.forbidden === 0 && rendered.xss === 0 && rendered.text.includes('<script>window.__xss = 1</script>'), JSON.stringify({ forbidden: rendered.forbidden, xss: rendered.xss }));
+  check('unsafe links lose their target; safe links keep it', rendered.badLinks === 0 && rendered.goodLink);
+  check('tables and code blocks are rendered', rendered.table === 2 && rendered.code.includes('<b>not bold</b>'), `${rendered.table} cells`);
+  check('the transcript loads no images from the network', !pageRequests.some((p) => /pixel\.png|remote\.png/.test(p)) && rendered.text.includes('[image: remote image]'), JSON.stringify(pageRequests.filter((p) => /png/.test(p))));
+  await printPage.close();
+
+  const [bulkPrint] = await Promise.all([context.waitForEvent('page'), browse.locator('#exportAllBtn').click()]);
+  watch(bulkPrint, 'bulk print');
+  await bulkPrint.waitForSelector('#printButton:not([disabled])', { timeout: 15000 });
+  check('several conversations print as one document with a contents list',
+    (await bulkPrint.locator('article').count()) === 3 && (await bulkPrint.locator('nav.contents li a').count()) === 3
+      && (await bulkPrint.title()) === 'Conversations (3)' && (await bulkPrint.evaluate(() => window.__printCalls)) === 1);
+  await bulkPrint.close();
+
+  await browse.locator('.view-tab[data-view="projects"]').click();
+  const pdfOption = await browse.evaluate(() => ({
+    disabled: document.querySelector('#exportFormat option[value="pdf"]').disabled,
+    selected: document.getElementById('exportFormat').value,
+  }));
+  check('PDF is not offered for project ZIPs', pdfOption.disabled && pdfOption.selected === 'markdown', JSON.stringify(pdfOption));
+  await browse.locator('.view-tab[data-view="conversations"]').click();
+
+  // --- 10. Pages are not reachable from websites
   const probe = await claude.evaluate(async (id) => {
     try { const r = await fetch(`chrome-extension://${id}/browse.html`); return `fetched ${r.status}`; } catch (e) { return 'blocked'; }
   }, extId);
   check('a website cannot load browse.html', probe === 'blocked', probe);
 
-  // Errors this test causes on purpose: refused direct calls (step 5) and the
-  // blocked fetch of an extension page from a website (step 8).
-  const expected = (e) => /403/.test(e) || /net::ERR_FAILED/.test(e);
+  // Errors this test causes on purpose: refused direct calls (step 5), files
+  // the stand-in does not serve (404), and the blocked fetch of an extension
+  // page from a website (step 9).
+  const expected = (e) => /403/.test(e) || /404 \(Not Found\)/.test(e) || /net::ERR_FAILED/.test(e);
   const unexpected = pageErrors.filter((e) => !expected(e));
   check('no unexpected page errors', unexpected.length === 0, unexpected.join(' | ').slice(0, 600));
 

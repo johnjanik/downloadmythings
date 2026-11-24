@@ -94,6 +94,23 @@ async function recordModelSnapshots(conversations) {
   return merged.snapshots;
 }
 
+// Hand a job to the print page (print.html) and open it in a new tab.
+// job: { orgId, conversations: [{ uuid, name }] or null for all, options }
+async function startPrintJob(job) {
+  await storageSet('local', { printJob: { ...job, createdAt: new Date().toISOString() } });
+  await new Promise((resolve) => {
+    if (chrome.tabs && chrome.tabs.create) {
+      chrome.tabs.create({ url: chrome.runtime.getURL('print.html') }, () => resolve());
+    } else {
+      // Content scripts cannot open tabs; the background script does it for them
+      chrome.runtime.sendMessage({ action: 'openPrintPage' }, () => {
+        void chrome.runtime.lastError;
+        resolve();
+      });
+    }
+  });
+}
+
 // Node (vitest) only; in the browser these are plain globals.
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
@@ -104,5 +121,6 @@ if (typeof module !== 'undefined' && module.exports) {
     recordExportTimestamps,
     mergeModelSnapshots,
     recordModelSnapshots,
+    startPrintJob,
   };
 }

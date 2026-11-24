@@ -23,7 +23,10 @@ export const CONTENT_SCRIPTS = [
   'lib/utils.js',
   'lib/store.js',
   'lib/api.js',
+  'lib/files.js',
   'lib/exporter.js',
+  'lib/projects.js',
+  'page-button.js',
   'content.js',
 ];
 
@@ -34,7 +37,7 @@ export function buildManifest(target, version) {
     description: 'Export your conversations and artifacts from claude.ai. Free, local and open source.',
     icons: ICONS,
     content_scripts: [
-      { matches: [CLAUDE_HOST], js: CONTENT_SCRIPTS, css: ['content.css'] },
+      { matches: [CLAUDE_HOST], js: CONTENT_SCRIPTS },
     ],
   };
   const toolbarButton = { default_popup: 'popup.html', default_icon: ICONS };

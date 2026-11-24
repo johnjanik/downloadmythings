@@ -73,11 +73,25 @@ function readExportOptions() {
     includeChats: document.getElementById('includeChats').checked,
     includeThinking: document.getElementById('includeThinking').checked,
     includeMetadata: document.getElementById('includeMetadata').checked,
+    includeAttachments: document.getElementById('includeAttachments').checked,
     includeArtifacts: document.getElementById('includeArtifacts').checked,
     extractArtifacts: document.getElementById('extractArtifacts').checked,
     artifactFormat: document.getElementById('artifactFormat').value,
     flattenArtifacts: document.getElementById('flattenArtifacts').checked
   };
+}
+
+// Put saved options back into the controls
+function applyExportOptions(saved) {
+  if (!saved) return;
+  for (const id of ['format', 'artifactFormat']) {
+    const select = document.getElementById(id);
+    const value = id === 'format' ? saved.format : saved.artifactFormat;
+    if (value && select.querySelector(`option[value="${CSS.escape(value)}"]`)) select.value = value;
+  }
+  for (const id of ['includeChats', 'includeThinking', 'includeMetadata', 'includeAttachments', 'includeArtifacts', 'extractArtifacts', 'flattenArtifacts']) {
+    if (typeof saved[id] === 'boolean') document.getElementById(id).checked = saved[id];
+  }
 }
 
 var ORG_ID_MISSING = 'Could not find your organization ID.';
@@ -130,6 +144,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
   includeChatsCheckbox.addEventListener('change', updateCheckboxStates);
   updateCheckboxStates();
+
+  // Remember the options between visits. The download button on claude.ai
+  // pages (page-button.js) exports with the same options.
+  storageGet('local', ['exportOptions']).then((stored) => {
+    applyExportOptions(stored.exportOptions);
+    updateCheckboxStates();
+  });
+  document.querySelector('.options').addEventListener('change', () => {
+    storageSet('local', { exportOptions: readExportOptions() });
+  });
 });
 
 // Run one export button: disable it, show progress, report the outcome.
@@ -156,6 +180,12 @@ document.getElementById('exportCurrent').addEventListener('click', (event) => {
     const orgId = await getOrgId();
     if (!orgId) throw new Error(ORG_ID_MISSING);
 
+    // PDF: a print page renders the conversation and opens the print dialog
+    if (readExportOptions().format === 'pdf') {
+      await startPrintJob({ orgId, conversations: [{ uuid: conversationId, name: '' }], options: readExportOptions() });
+      return;
+    }
+
     const response = await sendToContentScript(tab.id, {
       action: 'exportConversation',
       conversationId,
@@ -172,6 +202,13 @@ document.getElementById('exportCurrent').addEventListener('click', (event) => {
 // Export all conversations
 document.getElementById('exportAll').addEventListener('click', (event) => {
   runExport(event.currentTarget, 'Fetching all conversations...', async () => {
+    if (readExportOptions().format === 'pdf') {
+      const printOrgId = await getOrgId();
+      if (!printOrgId) throw new Error(ORG_ID_MISSING);
+      await startPrintJob({ orgId: printOrgId, conversations: null, options: readExportOptions() });
+      return;
+    }
+
     const tab = await queryActiveTab();
     if (!tab || !isClaudeTab(tab)) {
       throw new Error('Open claude.ai in this tab first, or use Browse All Conversations.');

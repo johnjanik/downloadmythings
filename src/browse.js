@@ -37,6 +37,7 @@ let selectedConversations = new Set(); // Track selected conversation IDs
 let lastCheckedIndex = null; // Track last checked checkbox for shift+click range selection
 let exportTimestamps = {}; // Map conversation UUID to last export timestamp
 let modelSnapshots = {}; // Map conversation UUID to { firstSeen, current, ... }, see lib/store.js
+let currentView = 'conversations'; // 'conversations' or 'projects' (see browse-projects.js)
 let statusFilter = 'all'; // 'all', 'new', 'exported', or 'projects' (search scope = project names)
 let dateFormat = 'mdy'; // 'mdy' or 'dmy'
 let timeFormat = '12h'; // '12h' or '24h'
@@ -219,6 +220,11 @@ function getProjectName(conversation) {
 
 // Apply filters and sorting
 function applyFiltersAndSort() {
+  if (currentView === 'projects') {
+    displayProjects();
+    return;
+  }
+
   const searchTerm = document.getElementById('searchInput').value.toLowerCase();
 
   // Filter conversations
@@ -565,6 +571,7 @@ function readExportOptions() {
     includeChats: document.getElementById('includeChats').checked,
     includeThinking: document.getElementById('includeThinking').checked,
     includeMetadata: document.getElementById('includeMetadata').checked,
+    includeAttachments: document.getElementById('includeAttachments').checked,
     includeArtifacts: document.getElementById('includeArtifacts').checked,
     extractArtifacts: document.getElementById('extractArtifacts').checked,
     artifactFormat: document.getElementById('artifactFormat').value,
@@ -582,12 +589,20 @@ async function refreshAfterExport() {
 // Export single conversation
 async function exportConversation(conversationId, conversationName) {
   try {
+    // PDF: a print page renders the conversation and opens the print dialog
+    if (readExportOptions().format === 'pdf') {
+      await startPrintJob({ orgId, conversations: [{ uuid: conversationId, name: conversationName }], options: readExportOptions() });
+      return;
+    }
+
     showToast(`Exporting ${conversationName}...`);
     const result = await exportConversationToFile(orgId, conversationId, readExportOptions(), conversationName);
     await refreshAfterExport();
-    showToast(result.artifactCount > 0
-      ? `Exported: ${conversationName} with ${result.artifactCount} artifact(s)`
-      : `Exported: ${conversationName}`);
+    const extras = [];
+    if (result.artifactCount > 0) extras.push(`${result.artifactCount} artifact(s)`);
+    if (result.attachments.saved > 0) extras.push(`${result.attachments.saved} attachment(s)`);
+    const missing = result.attachments.missing > 0 ? ` (${result.attachments.missing} attachment(s) could not be downloaded)` : '';
+    showToast(`Exported: ${conversationName}${extras.length ? ` with ${extras.join(' and ')}` : ''}${missing}`, Boolean(missing), missing ? 8000 : 3000);
   } catch (error) {
     console.error('Export error:', error);
     showToast(`Failed to export: ${error.message}`, true);
@@ -604,6 +619,16 @@ async function exportAllFiltered() {
 
   if (conversationsToExport.length === 0) {
     showToast('No conversations to export', true);
+    return;
+  }
+
+  // PDF: one document for all of them, with a contents page
+  if (readExportOptions().format === 'pdf') {
+    await startPrintJob({
+      orgId,
+      conversations: conversationsToExport.map(conv => ({ uuid: conv.uuid, name: conv.name })),
+      options: readExportOptions()
+    });
     return;
   }
 
@@ -658,10 +683,13 @@ async function exportAllFiltered() {
 
     if (result.included === 0) {
       showToast('No artifacts found, so nothing was downloaded.', true);
-    } else if (result.failed > 0) {
-      showToast(`Exported ${result.completed} of ${result.total} conversations (${result.failed} failed).`);
     } else {
-      showToast(`Successfully exported all ${result.completed} conversations!`);
+      const attachments = result.attachments.saved > 0 ? `, with ${result.attachments.saved} attachment(s)` : '';
+      const missing = result.attachments.missing > 0 ? ` ${result.attachments.missing} attachment(s) could not be downloaded; see attachments.json.` : '';
+      const headline = result.failed > 0
+        ? `Exported ${result.completed} of ${result.total} conversations (${result.failed} failed)`
+        : `Successfully exported all ${result.completed} conversations`;
+      showToast(`${headline}${attachments}.${missing}`, Boolean(missing), missing ? 8000 : 3000);
     }
   } catch (error) {
     console.error('Export error:', error);
@@ -684,15 +712,16 @@ function showError(message) {
 }
 
 // Show toast notification
-function showToast(message, isError = false) {
+function showToast(message, isError = false, duration = 3000) {
   const toast = document.getElementById('toast');
   toast.textContent = message;
   toast.style.background = isError ? '#d32f2f' : '#333';
   toast.classList.add('show');
   
-  setTimeout(() => {
+  clearTimeout(showToast.timer);
+  showToast.timer = setTimeout(() => {
     toast.classList.remove('show');
-  }, 3000);
+  }, duration);
 }
 
 // Setup event listeners
@@ -890,5 +919,8 @@ function setupEventListeners() {
   document.querySelector('.filter-option[data-value="all"]').classList.add('selected');
 
   // Export all button
-  document.getElementById('exportAllBtn').addEventListener('click', exportAllFiltered);
+  document.getElementById('exportAllBtn').addEventListener('click', () => {
+    if (currentView === 'projects') exportSelectedProjects();
+    else exportAllFiltered();
+  });
 }

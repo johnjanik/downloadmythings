@@ -8,6 +8,9 @@ const {
   renderConversation,
   buildConversationExport,
   buildBulkEntries,
+  planBulkConversation,
+  bulkAttachmentPrefix,
+  countAttachmentRecords,
   bulkZipFilename,
 } = exporter;
 
@@ -43,6 +46,7 @@ describe('normalizeExportOptions', () => {
       extractArtifacts: false,
       flattenArtifacts: false,
       artifactFormat: 'original',
+      includeAttachments: false,
     });
   });
 
@@ -61,6 +65,7 @@ describe('isNothingToExport', () => {
     expect(isNothingToExport({ includeChats: false })).toBe(true);
     expect(isNothingToExport({ includeChats: false, extractArtifacts: true })).toBe(false);
     expect(isNothingToExport({ includeChats: false, flattenArtifacts: true })).toBe(false);
+    expect(isNothingToExport({ includeChats: false, includeAttachments: true })).toBe(false);
     expect(isNothingToExport({})).toBe(false);
   });
 });
@@ -171,6 +176,31 @@ describe('buildBulkEntries (one conversation inside a bulk ZIP)', () => {
   it('uses the conversation ID when the title is empty', () => {
     const entries = buildBulkEntries(conversation(), { uuid: 'c-9', name: '' }, { format: 'text' }, new Set());
     expect(paths(entries)).toEqual(['c-9.txt']);
+  });
+});
+
+describe('attachments in a bulk ZIP', () => {
+  it('reports the name a conversation was filed under', () => {
+    const used = new Set(['trip plan']);
+    const plan = planBulkConversation(conversation(), { uuid: 'c-1', name: 'Trip plan' }, {}, used);
+    expect(plan.name).toBe('Trip plan (2)');
+    expect(paths(plan.entries)).toEqual(['Trip plan (2).json']);
+  });
+
+  it('reports no name when the conversation added nothing', () => {
+    const plan = planBulkConversation(conversation({ withArtifact: false }), { uuid: 'c-1', name: 'Trip plan' }, { includeChats: false, includeAttachments: true }, new Set());
+    expect(plan).toEqual({ name: null, entries: [] });
+  });
+
+  it('places attachments to match the artifact layout', () => {
+    expect(bulkAttachmentPrefix({}, 'Trip plan')).toBe('attachments/Trip plan/');
+    expect(bulkAttachmentPrefix({ extractArtifacts: true }, 'Trip plan')).toBe('Trip plan/attachments/');
+    expect(bulkAttachmentPrefix({ flattenArtifacts: true }, 'Trip plan')).toBe('Attachments/Trip plan_');
+  });
+
+  it('counts saved and missing attachments', () => {
+    expect(countAttachmentRecords([{ fidelity: 'original' }, { fidelity: 'preview' }, { fidelity: 'missing' }])).toEqual({ saved: 2, missing: 1 });
+    expect(countAttachmentRecords([])).toEqual({ saved: 0, missing: 0 });
   });
 });
 

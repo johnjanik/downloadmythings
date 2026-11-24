@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>DownloadMyThings: Save as PDF</title>
+  <style>
+    :root {
+      color-scheme: light;
+    }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      font-size: 14px;
+      line-height: 1.55;
+      color: #1f2328;
+      background: #ffffff;
+    }
+    .toolbar {
+      position: sticky;
+      top: 0;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 10px 24px;
+      background: #f6f7f9;
+      border-bottom: 1px solid #e2e4e9;
+    }
+    .toolbar .status {
+      flex: 1;
+      color: #444444;
+    }
+    .toolbar .status.error {
+      color: #b3261e;
+    }
+    .toolbar button {
+      padding: 8px 16px;
+      border: none;
+      border-radius: 5px;
+      background: #2563eb;
+      color: #ffffff;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    .toolbar button:disabled {
+      background: #c5c9d0;
+      cursor: default;
+    }
+    main {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+    nav.contents {
+      break-after: page;
+    }
+    nav.contents ol {
+      padding-left: 1.4em;
+    }
+    article + article {
+      break-before: page;
+      margin-top: 48px;
+    }
+    h1, h2, h3, h4 {
+      line-height: 1.25;
+      break-after: avoid;
+    }
+    h1 { font-size: 22px; }
+    h2 { font-size: 16px; margin-top: 1.4em; }
+    h2.speaker {
+      margin-top: 2em;
+      padding-top: 0.7em;
+      border-top: 1px solid #cfd3da;
+      font-size: 12px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: #1d4ed8;
+    }
+    h3 { font-size: 14px; }
+    pre {
+      padding: 10px 12px;
+      border: 1px solid #e2e4e9;
+      border-radius: 5px;
+      background: #f6f7f9;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      font-size: 12px;
+    }
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.92em;
+    }
+    table {
+      border-collapse: collapse;
+      margin: 1em 0;
+    }
+    th, td {
+      padding: 4px 10px;
+      border: 1px solid #cfd3da;
+      text-align: left;
+      vertical-align: top;
+    }
+    blockquote {
+      margin: 1em 0;
+      padding-left: 12px;
+      border-left: 3px solid #cfd3da;
+      color: #444444;
+    }
+    a { color: #1d4ed8; overflow-wrap: anywhere; }
+    .load-error { color: #b3261e; }
+
+    @page { margin: 16mm; }
+    @media print {
+      .toolbar { display: none; }
+      main { max-width: none; padding: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <span class="status" id="status">Preparing...</span>
+    <button id="printButton" disabled>Save as PDF...</button>
+  </div>
+  <main id="content"></main>
+
+  <script src="vendor/marked.umd.js"></script>
+  <script src="lib/utils.js"></script>
+  <script src="lib/store.js"></script>
+  <script src="lib/api.js"></script>
+  <script src="print.js"></script>
+</body>
+</html>

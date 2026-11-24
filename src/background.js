@@ -1,6 +1,7 @@
 // Background script: a service worker on Chrome (Manifest V3) and a background
-// page on Firefox (Manifest V2). Its only job is to put the content script
-// into claude.ai tabs that do not have a live copy.
+// page on Firefox (Manifest V2). It puts the content scripts into claude.ai
+// tabs that do not have a live copy, and opens the print page when a content
+// script asks for it.
 
 // Same files, same order, as the manifest declares for claude.ai.
 function contentScriptFiles() {
@@ -39,6 +40,12 @@ chrome.runtime.onInstalled.addListener(() => {
 
 // The popup asks for this when a claude.ai tab does not answer its message.
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  // The in-page button asks for the print page; content scripts cannot open tabs
+  if (request.action === 'openPrintPage') {
+    chrome.tabs.create({ url: chrome.runtime.getURL('print.html') }, () => sendResponse({ success: true }));
+    return true;
+  }
+
   if (request.action !== 'ensureContentScript' || typeof request.tabId !== 'number') return false;
 
   injectContentScripts(request.tabId).then(
