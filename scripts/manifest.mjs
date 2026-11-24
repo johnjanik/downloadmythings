@@ -49,7 +49,7 @@ export function buildManifest(target, version) {
     return {
       manifest_version: 3,
       ...shared,
-      permissions: ['activeTab', 'storage', 'scripting', 'tabs', 'sidePanel'],
+      permissions: ['activeTab', 'storage', 'scripting', 'tabs', 'sidePanel', 'alarms'],
       host_permissions: [CLAUDE_HOST],
       action: toolbarButton,
       side_panel: { default_path: PANEL_PAGE },
@@ -62,7 +62,7 @@ export function buildManifest(target, version) {
     return {
       manifest_version: 2,
       ...shared,
-      permissions: ['activeTab', 'storage', 'tabs', CLAUDE_HOST],
+      permissions: ['activeTab', 'storage', 'tabs', 'alarms', CLAUDE_HOST],
       browser_action: toolbarButton,
       sidebar_action: {
         default_title: 'DownloadMyThings',

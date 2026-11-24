@@ -33,8 +33,8 @@ describe('manifests', () => {
   });
 
   it('asks for no permission beyond the known set', () => {
-    expect(chrome.permissions).toEqual(['activeTab', 'storage', 'scripting', 'tabs', 'sidePanel']);
-    expect(firefox.permissions).toEqual(['activeTab', 'storage', 'tabs', 'https://claude.ai/*']);
+    expect(chrome.permissions).toEqual(['activeTab', 'storage', 'scripting', 'tabs', 'sidePanel', 'alarms']);
+    expect(firefox.permissions).toEqual(['activeTab', 'storage', 'tabs', 'alarms', 'https://claude.ai/*']);
   });
 
   it('exposes no extension page to websites', () => {

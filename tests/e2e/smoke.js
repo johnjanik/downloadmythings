@@ -232,7 +232,7 @@ const check = (name, ok, detail) => { results.push({ name, ok }); console.log(`$
     });
   });
   check('every dropdown and its list rows have solid, readable colours',
-    dropdowns.length === 4 && dropdowns.every((d) => d.rowOpaque && d.controlOpaque && d.contrast >= 4.5),
+    dropdowns.length >= 4 && dropdowns.every((d) => d.rowOpaque && d.controlOpaque && d.contrast >= 4.5),
     JSON.stringify(dropdowns.map((d) => [d.id, d.rowOpaque, d.controlOpaque, Math.round(d.contrast * 10) / 10])));
 
   const [p1] = await Promise.all([panel.waitForEvent('download'), panel.locator('#downloadChat').click()]);
@@ -345,6 +345,44 @@ const check = (name, ok, detail) => { results.push({ name, ok }); console.log(`$
     secondSync.counts.written === 0 && secondSync.counts.unchanged === 8
       && apiCalls.filter((c) => /chat_conversations\/[0-9a-f-]+$/.test(c.path) || /\/files\/f1\/contents$/.test(c.path)).length === 0,
     JSON.stringify([secondSync.counts, apiCalls.length]));
+
+  // Backups: chosen projects now, then the schedule, then a scheduled run
+  await panel.selectOption('#backupScope', 'projects');
+  await panel.waitForSelector('#backupProjects li');
+  check('"Projects I choose" lists the projects and waits for a choice',
+    (await panel.locator('#backupProjects li').count()) === 2 && (await panel.locator('#backupNow').isDisabled()));
+  await panel.locator('#backupProjects li', { hasText: 'Alpha project' }).locator('input').check();
+  await panel.waitForFunction(() => !document.getElementById('backupNow').disabled);
+  const [pb] = await Promise.all([panel.waitForEvent('download'), panel.locator('#backupNow').click()]);
+  const chosenBackup = await unzip(pb);
+  check('"Back up now" saves the chosen projects in a dated ZIP, one folder each',
+    /^downloadmythings-backup-\d{8}-\d{6}\.zip$/.test(chosenBackup.name)
+      && chosenBackup.files.includes('Alpha project/instructions.md') && chosenBackup.files.includes('Alpha project/manifest.json')
+      && !chosenBackup.files.some((n) => n.startsWith('Beta/')),
+    `${chosenBackup.name} ${JSON.stringify(chosenBackup.files)}`);
+  await panel.waitForFunction(() => /^Last backup .*: Saved downloadmythings-backup-/.test(document.getElementById('backupLast').textContent), null, { timeout: 5000 });
+  check('the card records when the last backup ran and what it saved', true);
+
+  const backupAlarm = () => sw.evaluate(() => chrome.alarms.get('dmt-backup'));
+  await panel.selectOption('#backupSchedule', 'daily');
+  let alarm = await backupAlarm();
+  for (let i = 0; i < 20 && !alarm; i++) { await panel.waitForTimeout(100); alarm = await backupAlarm(); }
+  check('a daily schedule sets a daily alarm', Boolean(alarm) && alarm.periodInMinutes === 1440, JSON.stringify(alarm));
+  await panel.selectOption('#backupSchedule', 'off');
+  for (let i = 0; i < 20 && alarm; i++) { await panel.waitForTimeout(100); alarm = await backupAlarm(); }
+  check('switching the schedule off clears the alarm', !alarm, JSON.stringify(alarm));
+
+  // What the alarm does: open the panel with #backup-run, which backs up and closes itself
+  await panel.selectOption('#backupScope', 'everything');
+  await panel.waitForFunction(() => document.getElementById('backupProjects').hidden);
+  const scheduled = await context.newPage(); watch(scheduled, 'scheduled backup');
+  const [ps] = await Promise.all([scheduled.waitForEvent('download', { timeout: 30000 }), scheduled.goto(`chrome-extension://${extId}/panel.html#backup-run`)]);
+  const scheduledName = ps.suggestedFilename();
+  const closed = await scheduled.waitForEvent('close', { timeout: 25000 }).then(() => true, () => false);
+  const recorded = await panel.evaluate(() => new Promise((resolve) => chrome.storage.local.get(['backup'], (r) => resolve(r.backup))));
+  check('a scheduled run backs everything up without anyone clicking, records it, and closes its tab',
+    /^downloadmythings-everything-/.test(scheduledName) && closed && /^Saved 2 projects and 2 other chats/.test(recorded.lastResult),
+    `${scheduledName} closed=${closed} ${recorded.lastResult}`);
 
   // Library
   await panel.locator('.tab[data-tab="library"]').click();

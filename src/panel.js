@@ -181,6 +181,7 @@ function renderProjectCard() {
   $('everythingButton').disabled = !state.orgId || Boolean(state.job);
   $('downloadChat').disabled = Boolean(state.job);
   renderSyncCard();
+  renderBackupCard();
 }
 
 function renderExplorer() {
@@ -397,6 +398,17 @@ async function runJob(job) {
         message = `Saved ${result.filename}. ${describeProjectExport(result.summary)}`;
         if (options.layout === 'claude-code') showHandoff(result.filename);
       }
+    } else if (job.type === 'backup-projects') {
+      const wanted = new Set(job.projectIds);
+      const chosen = state.projects.filter((project) => wanted.has(project.uuid));
+      if (chosen.length === 0) throw new Error('None of the chosen projects exist any more. Pick the projects to back up again.');
+      const backupOptions = {
+        ...options,
+        includeInstructions: true, includeKnowledge: true, includeProjectChats: true,
+        projectFolders: true, zipFilename: `downloadmythings-backup-${fileDateStamp()}`
+      };
+      const result = await exportProjectsToZip(state.orgId, chosen, inRange, backupOptions, hooks);
+      if (!result.cancelled) message = `Saved ${result.filename}. ${describeProjectExport(result.summary)}`;
     } else if (job.type === 'everything') {
       const everythingOptions = { ...options, format: options.format === 'pdf' ? 'markdown' : options.format };
       const result = await exportEverything(state.orgId, state.projects, inRange, everythingOptions, hooks);
@@ -431,9 +443,11 @@ async function runJob(job) {
 
     if (message) showNotice(message, 'info');
     else showNotice(cancelledMessage, 'info');
+    if (job.backup) await recordBackupRun(message || 'Stopped before it finished');
   } catch (error) {
     console.error('Export failed:', error);
     showNotice(`Export failed: ${error.message}`);
+    if (job.backup) await recordBackupRun(`Failed: ${error.message}`);
   } finally {
     setRequestSignal(null);
     state.job = null;
@@ -531,6 +545,127 @@ async function setUpSync() {
     }
     runJob({ type: 'sync', options: readOptions() });
   });
+}
+
+// ---------------------------------------------------------------- backups
+
+const BACKUP_DEFAULTS = { scope: 'everything', projectIds: [], method: 'zip', schedule: 'off', lastRunAt: null, lastResult: '' };
+
+async function loadBackupSettings() {
+  const stored = await storageGet('local', ['backup']);
+  return { ...BACKUP_DEFAULTS, ...(stored.backup || {}) };
+}
+
+// background.js watches `backup.schedule` and sets or clears the alarm
+async function saveBackupSettings(changes) {
+  const backup = { ...(await loadBackupSettings()), ...changes };
+  await storageSet('local', { backup });
+  return backup;
+}
+
+async function recordBackupRun(result) {
+  await saveBackupSettings({ lastRunAt: new Date().toISOString(), lastResult: result });
+  renderBackupCard();
+}
+
+async function renderBackupCard() {
+  const backup = await loadBackupSettings();
+  $('backupScope').value = backup.scope === 'projects' ? 'projects' : 'everything';
+  $('backupSchedule').value = ['daily', 'weekly'].includes(backup.schedule) ? backup.schedule : 'off';
+
+  // The list of projects to tick, for "Projects I choose"
+  const list = $('backupProjects');
+  list.hidden = backup.scope !== 'projects';
+  const chosen = new Set(backup.projectIds);
+  list.replaceChildren(...state.projects.map((project) => {
+    const row = document.createElement('li');
+    const label = document.createElement('label');
+    label.className = 'check main';
+    const box = document.createElement('input');
+    box.type = 'checkbox';
+    box.checked = chosen.has(project.uuid);
+    box.addEventListener('change', async () => {
+      const current = new Set((await loadBackupSettings()).projectIds);
+      if (box.checked) current.add(project.uuid);
+      else current.delete(project.uuid);
+      await saveBackupSettings({ projectIds: [...current] });
+      renderBackupCard();
+    });
+    label.append(box, document.createTextNode(project.name || 'Untitled Project'));
+    row.appendChild(label);
+    return row;
+  }));
+
+  // Updating the sync folder is offered once a folder has been chosen
+  $('backupMethodBox').hidden = !state.syncFolder;
+  $('backupMethod').value = backup.method === 'folder' && state.syncFolder ? 'folder' : 'zip';
+
+  const nothingChosen = backup.scope === 'projects' && backup.projectIds.length === 0;
+  $('backupNow').disabled = !state.orgId || Boolean(state.job) || nothingChosen;
+  $('backupLast').textContent = backup.lastRunAt
+    ? `Last backup ${new Date(backup.lastRunAt).toLocaleString()}: ${backup.lastResult}`
+    : '';
+}
+
+// Run the backup the settings describe. `automatic` runs have no click behind
+// them, so they cannot ask the browser for folder permission.
+async function runBackup(automatic) {
+  const backup = await loadBackupSettings();
+  const options = { ...readOptions(), dateFrom: '', dateTo: '', zipName: '' };
+  if (options.format === 'pdf') options.format = 'markdown';
+
+  if (backup.method === 'folder' && state.syncFolder) {
+    const access = { mode: 'readwrite' };
+    let permission = await state.syncFolder.queryPermission(access);
+    if (permission !== 'granted' && !automatic) permission = await state.syncFolder.requestPermission(access);
+    if (permission === 'granted') {
+      await runJob({ type: 'sync', options, backup: true });
+      return;
+    }
+    // No permission and nobody to ask: fall back to a ZIP so the backup still happens
+  }
+  if (backup.scope === 'projects') {
+    await runJob({ type: 'backup-projects', projectIds: backup.projectIds, options, backup: true });
+  } else {
+    await runJob({ type: 'everything', options, backup: true });
+  }
+}
+
+function setUpBackups() {
+  renderBackupCard();
+  $('backupScope').addEventListener('change', async (event) => {
+    await saveBackupSettings({ scope: event.target.value });
+    renderBackupCard();
+  });
+  $('backupMethod').addEventListener('change', (event) => saveBackupSettings({ method: event.target.value }));
+  $('backupSchedule').addEventListener('change', async (event) => {
+    await saveBackupSettings({ schedule: event.target.value });
+    showNotice(event.target.value === 'off' ? 'Automatic backups are off.' : `Automatic backups are on: ${event.target.value}, while the browser is open.`, 'info');
+  });
+  $('backupNow').addEventListener('click', () => {
+    if (state.viewMode === 'popup') {
+      // A popup would close mid-backup: run it in a tab, as the schedule does
+      chrome.tabs.create({ url: chrome.runtime.getURL('panel.html#backup-run') });
+      window.close();
+      return;
+    }
+    runBackup(false);
+  });
+}
+
+// A scheduled run: this tab was opened by the background script's alarm
+async function runScheduledBackup() {
+  if (!state.orgId) {
+    await recordBackupRun('Skipped: not signed in to claude.ai');
+  } else {
+    await runBackup(true);
+  }
+  // Give the browser time to take over the download, then close this tab
+  setTimeout(() => {
+    chrome.tabs.getCurrent((tab) => {
+      if (tab) chrome.tabs.remove(tab.id);
+    });
+  }, 12000);
 }
 
 // ---------------------------------------------------------------- display mode
@@ -636,6 +771,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   await setUpDisplayMode();
   await setUpSync();
   if (location.hash === '#sync') $('syncCard').scrollIntoView();
+  setUpBackups();
   await loadAccount();
 
   // A side panel stays open while the user moves between tabs
@@ -646,12 +782,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-  // A job handed over by the popup
+  // A job handed over by the popup, or a backup started by the schedule
   if (state.viewMode === 'tab') {
     const stored = await storageGet('local', ['panelJob']);
     if (stored.panelJob) {
       chrome.storage.local.remove('panelJob');
       runJob(stored.panelJob);
+    } else if (location.hash === '#backup-run') {
+      runScheduledBackup();
     }
   }
 });

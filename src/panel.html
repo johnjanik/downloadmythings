@@ -252,6 +252,37 @@
         <button class="btn" id="openSync" hidden>Open folder sync</button>
         <div class="hint" id="syncLast"></div>
       </section>
+
+      <section class="card" id="backupCard">
+        <h2>Backups</h2>
+        <p>Your projects and chats saved as one ZIP in your Downloads folder, now or on a schedule.</p>
+        <label class="field">
+          <span>Back up</span>
+          <select id="backupScope">
+            <option value="everything">Everything: all projects and chats</option>
+            <option value="projects">Projects I choose</option>
+          </select>
+        </label>
+        <ul class="rows" id="backupProjects" hidden></ul>
+        <label class="field" id="backupMethodBox" hidden>
+          <span>Save as</span>
+          <select id="backupMethod">
+            <option value="zip">A ZIP in Downloads</option>
+            <option value="folder">An update to the sync folder</option>
+          </select>
+        </label>
+        <button class="btn primary" id="backupNow" disabled>Back up now</button>
+        <label class="field">
+          <span>Automatic backup</span>
+          <select id="backupSchedule">
+            <option value="off">Off</option>
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+          </select>
+        </label>
+        <div class="hint">Automatic backups run while the browser is open, in a tab that closes itself when done.</div>
+        <div class="hint" id="backupLast"></div>
+      </section>
     </main>
 
     <!-- ===================== Library ===================== -->

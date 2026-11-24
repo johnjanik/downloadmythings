@@ -1,8 +1,8 @@
 // Background script: a service worker on Chrome (Manifest V3) and a background
 // page on Firefox (Manifest V2). It puts the content scripts into claude.ai
 // tabs that do not have a live copy, opens the print page when a content
-// script asks for it, and makes the toolbar button open the panel as a side
-// panel or a popup.
+// script asks for it, starts scheduled backups, and makes the toolbar button
+// open the panel as a side panel or a popup.
 
 // Same files, same order, as the manifest declares for claude.ai.
 function contentScriptFiles() {
@@ -38,6 +38,46 @@ chrome.runtime.onInstalled.addListener(() => {
     });
   });
 });
+
+// ---- Automatic backups --------------------------------------------------
+// A backup needs a page (to build a ZIP and hand it to the browser), so the
+// alarm opens the panel in a background tab, which runs the backup and closes
+// itself. Backups therefore run only while the browser is open.
+
+var BACKUP_ALARM = 'dmt-backup';
+var BACKUP_PERIOD_MINUTES = { daily: 24 * 60, weekly: 7 * 24 * 60 };
+
+function scheduleBackupAlarm() {
+  if (!chrome.alarms) return;
+  chrome.storage.local.get(['backup'], (result) => {
+    const backup = (result || {}).backup || {};
+    const period = BACKUP_PERIOD_MINUTES[backup.schedule];
+    if (!period) {
+      chrome.alarms.clear(BACKUP_ALARM);
+      return;
+    }
+    // Due one period after the last run; a run missed while the browser was
+    // closed happens a minute after it starts again.
+    const last = backup.lastRunAt ? new Date(backup.lastRunAt).getTime() : 0;
+    const due = Math.max(Date.now() + 60 * 1000, last + period * 60 * 1000);
+    chrome.alarms.create(BACKUP_ALARM, { when: due, periodInMinutes: period });
+  });
+}
+
+if (chrome.alarms) {
+  chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name !== BACKUP_ALARM) return;
+    chrome.tabs.create({ url: chrome.runtime.getURL('panel.html#backup-run'), active: false });
+  });
+  chrome.runtime.onInstalled.addListener(scheduleBackupAlarm);
+  chrome.runtime.onStartup.addListener(scheduleBackupAlarm);
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'local' || !changes.backup) return;
+    const before = (changes.backup.oldValue || {}).schedule;
+    const after = (changes.backup.newValue || {}).schedule;
+    if (before !== after) scheduleBackupAlarm(); // not on every "last run" update
+  });
+}
 
 // ---- Side panel or popup -----------------------------------------------
 // The toolbar button opens the panel page either as the browser's side panel

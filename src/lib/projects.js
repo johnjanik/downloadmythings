@@ -279,7 +279,9 @@ async function exportProjectsToZip(orgId, projects, conversations, options, hook
     if (isCancelled()) return { cancelled: true, filename: null, summary: null, manifests };
     const project = projects[i];
     const name = project.name || 'Untitled Project';
-    const root = projects.length === 1 ? '' : `${uniqueFilename(sanitizeFilename(name), '', usedRoots)}/`;
+    // One project is saved without a top-level folder, unless the caller wants the same layout every time
+    const flat = projects.length === 1 && !(options && options.projectFolders);
+    const root = flat ? '' : `${uniqueFilename(sanitizeFilename(name), '', usedRoots)}/`;
     const result = await collectProject(orgId, project, conversations, options, root, {
       isCancelled,
       onStep: (label) => report(`${name}: ${label}`, (i / projects.length) * 100)
