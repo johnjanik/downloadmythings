@@ -55,6 +55,9 @@ Your organization is detected automatically. If you see "Could not find your org
 | The panel says "Sign in to claude.ai" | Sign in on claude.ai in this browser, then press the refresh button on the project card |
 | The toolbar button does nothing | Switch "Open as" to Popup at the bottom of the panel, or open the panel from the browser's side panel menu |
 | Nothing downloads | Check that the browser is not blocking multiple downloads from the page |
+| "Sync to a folder" is missing | It needs Chrome or Edge. Firefox does not give extensions access to a folder |
+| Sync says it needs permission again | The browser withdraws folder access from time to time. Press **Sync now** and allow it |
+| An automatic backup did not run | The browser must be open. A missed run happens about a minute after the browser next starts. The Backups card shows the last run and its result |
 | Something else | Options, then **attach a diagnostics file**, and [open an issue](https://github.com/johnjanik/downloadmythings/issues). The file holds versions, counts and recent errors, with all IDs removed |
 
 ## Browser differences

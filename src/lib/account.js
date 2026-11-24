@@ -19,45 +19,6 @@ if (typeof module !== 'undefined' && module.exports && typeof collectProject ===
   );
 }
 
-var DMT_PART_LIMIT_BYTES = 256 * 1024 * 1024; // start a new ZIP part past this much content
-
-// Gathers entries and downloads a ZIP part each time the limit is passed.
-// A single part is named "<base>.zip"; several are "<base>-part1.zip", ...
-function createPartWriter(baseName, limitBytes, onZipProgress) {
-  let entries = [];
-  let bytes = 0;
-  const parts = [];
-
-  const nextName = (isLast) => (isLast && parts.length === 0 ? `${baseName}.zip` : `${baseName}-part${parts.length + 1}.zip`);
-
-  async function flush(isLast) {
-    if (entries.length === 0) return;
-    const filename = nextName(isLast);
-    downloadFile(await zipEntries(entries, onZipProgress), filename, 'application/zip');
-    parts.push(filename);
-    entries = [];
-    bytes = 0;
-  }
-
-  return {
-    parts,
-    // The name the final part will get, for the manifest inside it
-    finalName: () => nextName(true),
-    async add(newEntries) {
-      for (const entry of newEntries) {
-        entries.push(entry);
-        bytes += contentByteLength(entry.content);
-      }
-      if (bytes >= limitBytes) await flush(false);
-    },
-    async finish(lastEntries) {
-      entries.push(...lastEntries);
-      await flush(true);
-      return parts;
-    }
-  };
-}
-
 // "12 projects and 840 other chats in 2 ZIP files; 3 problems, see manifest.json"
 function describeAccountExport(counts, partCount) {
   const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;

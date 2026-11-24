@@ -3,7 +3,7 @@ name: Release
 # Push a tag to publish a GitHub release:   git tag v1.2.3 && git push origin v1.2.3
 # The tag must match the version in package.json and point at a commit on main.
 # Store submission (Chrome Web Store, Firefox Add-ons, Edge Add-ons) is not
-# automated yet; upload the ZIPs from the release by hand.
+# automated yet; upload the ZIPs from the release by hand. See docs/PUBLISHING.md.
 on:
   push:
     tags: ['v*']

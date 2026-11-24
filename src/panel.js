@@ -369,6 +369,12 @@ function setProgress(label, percent) {
   $('progressBar').style.width = `${Math.max(0, Math.min(100, Math.round(percent || 0)))}%`;
 }
 
+// "Alpha.zip", or "3 ZIP files (backup-part1.zip to backup-part3.zip)" for a large export
+function savedZipNames(result) {
+  const parts = result.parts || [];
+  return parts.length > 1 ? `${parts.length} ZIP files (${parts[0]} to ${parts[parts.length - 1]})` : result.filename;
+}
+
 async function runJob(job) {
   if (state.job) return;
   state.job = { cancelled: false, controller: new AbortController() };
@@ -395,7 +401,7 @@ async function runJob(job) {
         || await getProject(state.orgId, job.projectId);
       const result = await exportProjectsToZip(state.orgId, [project], inRange, options, hooks);
       if (!result.cancelled) {
-        message = `Saved ${result.filename}. ${describeProjectExport(result.summary)}`;
+        message = `Saved ${savedZipNames(result)}. ${describeProjectExport(result.summary)}`;
         if (options.layout === 'claude-code') showHandoff(result.filename);
       }
     } else if (job.type === 'backup-projects') {
@@ -408,7 +414,7 @@ async function runJob(job) {
         projectFolders: true, zipFilename: `downloadmythings-backup-${fileDateStamp()}`
       };
       const result = await exportProjectsToZip(state.orgId, chosen, inRange, backupOptions, hooks);
-      if (!result.cancelled) message = `Saved ${result.filename}. ${describeProjectExport(result.summary)}`;
+      if (!result.cancelled) message = `Saved ${savedZipNames(result)}. ${describeProjectExport(result.summary)}`;
     } else if (job.type === 'everything') {
       const everythingOptions = { ...options, format: options.format === 'pdf' ? 'markdown' : options.format };
       const result = await exportEverything(state.orgId, state.projects, inRange, everythingOptions, hooks);

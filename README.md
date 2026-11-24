@@ -10,7 +10,11 @@ DownloadMyThings is an independent project. It is not affiliated with or endorse
 - **Export everything**: every project and every other chat in the account in one action, split into several ZIP files when the account is large
 - **Chats** as Markdown, JSON (every branch), plain text or PDF, with uploads and pasted text saved as real files if you want them
 - **A manifest in every project ZIP** that says how faithful each file is: original, PDF rendition, extracted text, preview or missing, with a SHA-256. A file claude.ai will not serve is reported, never dropped silently
-- **Library**: every chat in the account with its project and date, searchable, with select and export
+- **Sync to a folder**: an incremental copy of the whole account as ordinary files. Each run rewrites only what changed, and can be stopped and resumed
+- **Backups**: everything or the projects you choose, on demand or automatically every day or week
+- **Library**: every chat in the account with its project and date, with select and export
+- **Search inside messages**: the Library can search what was said in every chat, from a private index kept on your computer, with no cap on results
+- **Hand-off layouts**: a project as a Claude Code folder (`CLAUDE.md`, `docs/`, `chats/`) with a ready prompt, and Markdown chats with front matter for Obsidian
 - **Files and Chats explorer** for a project, with a download button on each row
 - **Works from any tab**: the panel shows the conversation or project open in the current tab, and lets you pick one when there is none
 - **Side panel or popup**: your choice, switched at the bottom of the panel
@@ -26,7 +30,7 @@ DownloadMyThings is an independent project. It is not affiliated with or endorse
 
 ## Install
 
-DownloadMyThings is not in the browser stores yet. To run it from source, see [docs/INSTALL.md](docs/INSTALL.md). The short version:
+DownloadMyThings is not in the browser stores yet; [docs/PUBLISHING.md](docs/PUBLISHING.md) has the steps and the listing text. To run it from source, see [docs/INSTALL.md](docs/INSTALL.md). The short version:
 
 ```bash
 npm install
@@ -46,11 +50,27 @@ Then load `dist/chrome` as an unpacked extension in Chrome, or `dist/firefox/man
    - **Download Entire Project** saves instructions, files and chats in one ZIP.
    - **Download All Files** and **Download All Chats** save one part each.
    - **Export everything** saves the whole account.
-4. On the **Library** tab, search your chats, tick some, and export them.
+   - **Move to Claude Code** saves the project laid out for Claude Code and shows a prompt to paste there.
+4. On the **Library** tab, search your chats, tick some, and export them. **Search inside messages too** switches on full-text search; the first time, it reads every chat once to build its index.
+
+A running export shows a **Stop** button. Stopping ends the requests in flight as well as the ones not yet started.
 
 **Export settings** (under the project buttons) set the ZIP name, whether knowledge files keep their format or are saved as Markdown text, the chat format, a date range for chats, and whether to include chat attachments.
 
 The switch at the bottom of the panel chooses between **Side panel** and **Popup**. Which side of the window the side panel sits on is a browser setting, not something the extension controls. A long export started from the popup moves to its own tab, because a popup closes as soon as you click elsewhere.
+
+### Sync to a folder
+
+In Chrome and Edge, **Sync to a folder** keeps a copy of the whole account in a folder you pick: `Projects/<name>/` with instructions, files and chats, and `Chats/` for everything else. The first run writes everything. Later runs read only the conversations that changed and rewrite only the files whose content changed, so they are much shorter than the first. A renamed chat is moved, a file you deleted from the folder is written again, and nothing is ever deleted because it is gone from claude.ai. Its record of what it wrote is in `.downloadmythings/sync-index.json` inside the folder. Firefox has no folder access for extensions, so this card does not appear there.
+
+### Backups
+
+The **Backups** card backs up **Everything** or **Projects I choose**, as a dated ZIP in your Downloads folder or, once a sync folder is set, as an update to that folder. **Back up now** runs it at once. **Automatic backup** runs it every day or every week:
+
+- It runs while the browser is open, in a background tab that closes itself when it has finished. A run missed while the browser was closed happens about a minute after the browser starts again.
+- A scheduled run cannot ask for permission. If the browser has withdrawn access to the sync folder, that run saves a ZIP instead.
+- If your browser is set to ask where to save every download, it will ask for each backup too.
+- The card shows when the last backup ran and what it saved.
 
 **Table view** (linked at the bottom of the panel) is the full-width table of all conversations and projects, with sorting, model history and export tracking.
 
@@ -79,6 +99,7 @@ manifest.json           what was saved, from where, how faithful, with hashes
 ```
 src/                 the extension, one copy for every browser
   panel.html/js      the main interface: toolbar popup, side panel and tab in one page
+  background.js      content-script injection, the side panel or popup choice, the backup alarm
   browse.html/js     the full table view
   print.html/js      the print view behind PDF export
   page-button.js     the download button on claude.ai pages
@@ -88,6 +109,8 @@ src/                 the extension, one copy for every browser
   lib/exporter.js    chat exports and ZIPs
   lib/projects.js    project export
   lib/account.js     export everything
+  lib/sync.js        sync to a folder
+  lib/search.js      the index behind search inside messages
   lib/store.js       extension storage helpers
   lib/utils.js       Markdown and text conversion, artifacts, model names, backup, diagnostics
   vendor/            JSZip 3.10.1 and marked 18.3.0, byte for byte from npm
@@ -114,7 +137,10 @@ The extension relies on claude.ai's internal web API, which is undocumented and 
 - Word files usually come back as the text claude.ai extracted, and images sometimes as a preview. The manifest says which.
 - Binary files Claude generated in its sandbox are not exported yet. Text files it created are, as artifacts.
 - Memory is included in Export everything only when claude.ai returns it. Styles are not exported yet.
-- Exports are built in memory. Export everything starts a new ZIP file every 256 MB.
+- ZIP exports are built in memory. Export everything and multi-project exports start a new ZIP file every 256 MB; a single project is always one ZIP. Sync to a folder writes file by file and has no such limit.
+- Sync to a folder needs Chrome or Edge. The folder picker and scheduled backups have been tested with stand-ins, not yet on a real account.
+- Automatic backups need the browser to be open.
+- The interface is in English only.
 - Markdown and plain text exports contain only the currently selected branch.
 - The Firefox build is checked with Mozilla's linter but has not been run in Firefox.
 

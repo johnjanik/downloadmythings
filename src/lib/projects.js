@@ -261,22 +261,31 @@ function projectZipFilename(projects, now) {
   return `downloadmythings-projects-${fileDateStamp(now)}.zip`;
 }
 
-// Export one or more projects as a single ZIP. One project is saved without a
-// top-level folder; several get a folder each.
+// Export one or more projects as a ZIP. One project is saved without a
+// top-level folder; several get a folder each. Many large projects are written
+// as several ZIP parts, a new one each time the content passes the part limit,
+// so memory use stays near one part plus one project.
 // hooks: { onProgress({ label, percent }), isCancelled() }
-// Resolves with { cancelled, filename, summary, manifests }.
+// Resolves with { cancelled, filename, parts, summary, manifests }. `filename`
+// is the last ZIP written; parts written before a cancel stay on disk.
 async function exportProjectsToZip(orgId, projects, conversations, options, hooks) {
   const h = hooks || {};
   const isCancelled = () => Boolean(h.isCancelled && h.isCancelled());
   const report = (label, percent) => { if (h.onProgress) h.onProgress({ label, percent }); };
 
-  const entries = [];
+  // The caller may name the ZIP (the panel's "ZIP name" setting)
+  const chosen = normalizeProjectOptions(options).zipFilename.trim();
+  const baseName = (chosen ? `${sanitizeFilename(chosen.replace(/\.zip$/i, ''))}.zip` : projectZipFilename(projects)).replace(/\.zip$/, '');
+  const limit = typeof (options || {}).partLimitBytes === 'number' ? options.partLimitBytes : DMT_PART_LIMIT_BYTES;
+  const writer = createPartWriter(baseName, limit, (percent) => report('Creating ZIP file...', percent), isCancelled);
+  const stopped = () => ({ cancelled: true, filename: null, parts: writer.parts, summary: null, manifests });
+
   const manifests = [];
   const exportedChatIds = [];
   const usedRoots = new Set();
 
   for (let i = 0; i < projects.length; i++) {
-    if (isCancelled()) return { cancelled: true, filename: null, summary: null, manifests };
+    if (isCancelled()) return stopped();
     const project = projects[i];
     const name = project.name || 'Untitled Project';
     // One project is saved without a top-level folder, unless the caller wants the same layout every time
@@ -286,21 +295,18 @@ async function exportProjectsToZip(orgId, projects, conversations, options, hook
       isCancelled,
       onStep: (label) => report(`${name}: ${label}`, (i / projects.length) * 100)
     });
-    entries.push(...result.entries);
     manifests.push(result.manifest);
     exportedChatIds.push(...result.exportedChatIds);
+    if (isCancelled()) return stopped();
+    // The last project closes the archive; earlier ones may fill a part on the way
+    if (i < projects.length - 1) await writer.add(result.entries);
+    else await writer.finish(result.entries);
   }
-  if (isCancelled()) return { cancelled: true, filename: null, summary: null, manifests };
+  if (isCancelled()) return stopped();
 
-  const blob = await zipEntries(entries, (percent) => report('Creating ZIP file...', percent));
-  if (isCancelled()) return { cancelled: true, filename: null, summary: null, manifests };
-
-  // The caller may name the ZIP (the panel's "ZIP name" setting)
-  const chosen = normalizeProjectOptions(options).zipFilename.trim();
-  const filename = chosen ? `${sanitizeFilename(chosen.replace(/\.zip$/i, ''))}.zip` : projectZipFilename(projects);
-  downloadFile(blob, filename, 'application/zip');
+  const parts = writer.parts;
   if (exportedChatIds.length > 0) await recordExportTimestamps(exportedChatIds);
-  return { cancelled: false, filename, summary: summarizeProjectManifests(manifests), manifests };
+  return { cancelled: false, filename: parts[parts.length - 1] || null, parts, summary: summarizeProjectManifests(manifests), manifests };
 }
 
 // Node (vitest) only; in the browser these are plain globals.

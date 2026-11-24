@@ -210,6 +210,48 @@ function zipEntries(entries, onProgress) {
   );
 }
 
+var DMT_PART_LIMIT_BYTES = 256 * 1024 * 1024; // start a new ZIP part past this much content
+
+// Gathers entries and downloads a ZIP part each time the limit is passed.
+// A single part is named "<base>.zip"; several are "<base>-part1.zip", ...
+// `isCancelled`, when given, is asked after each ZIP is built: a cancelled part is not saved.
+function createPartWriter(baseName, limitBytes, onZipProgress, isCancelled) {
+  let entries = [];
+  let bytes = 0;
+  const parts = [];
+
+  const nextName = (isLast) => (isLast && parts.length === 0 ? `${baseName}.zip` : `${baseName}-part${parts.length + 1}.zip`);
+
+  async function flush(isLast) {
+    if (entries.length === 0) return;
+    const filename = nextName(isLast);
+    const blob = await zipEntries(entries, onZipProgress);
+    if (isCancelled && isCancelled()) return;
+    downloadFile(blob, filename, 'application/zip');
+    parts.push(filename);
+    entries = [];
+    bytes = 0;
+  }
+
+  return {
+    parts,
+    // The name the final part will get, for the manifest inside it
+    finalName: () => nextName(true),
+    async add(newEntries) {
+      for (const entry of newEntries) {
+        entries.push(entry);
+        bytes += contentByteLength(entry.content);
+      }
+      if (bytes >= limitBytes) await flush(false);
+    },
+    async finish(lastEntries) {
+      entries.push(...lastEntries);
+      await flush(true);
+      return parts;
+    }
+  };
+}
+
 // Fetch one conversation and download it. Resolves with { filename, artifactCount }.
 async function exportConversationToFile(orgId, conversationId, options, displayName) {
   if (isNothingToExport(options)) throw new Error(DMT_NOTHING_TO_EXPORT);
@@ -356,6 +398,8 @@ if (typeof module !== 'undefined' && module.exports) {
     countAttachmentRecords,
     bulkZipFilename,
     zipEntries,
+    DMT_PART_LIMIT_BYTES,
+    createPartWriter,
     exportConversationToFile,
     exportConversationsToZip,
   };
