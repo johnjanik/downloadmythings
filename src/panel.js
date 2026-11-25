@@ -877,7 +877,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (state.viewMode === 'sidepanel') {
     chrome.tabs.onActivated.addListener(scheduleContextRefresh);
     chrome.tabs.onUpdated.addListener((tabId, change) => {
-      if (change.url) scheduleContextRefresh();
+      if (change.url || change.status === 'complete') scheduleContextRefresh();
     });
   }
 

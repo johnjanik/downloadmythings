@@ -33,7 +33,7 @@ describe('manifests', () => {
   });
 
   it('asks for no permission beyond the known set', () => {
-    expect(chrome.permissions).toEqual(['storage', 'scripting', 'tabs', 'sidePanel', 'alarms']);
+    expect(chrome.permissions).toEqual(['storage', 'scripting', 'sidePanel', 'alarms']);
     expect(firefox.permissions).toEqual(['storage', 'tabs', 'alarms', 'https://claude.ai/*']);
   });
 

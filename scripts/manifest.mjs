@@ -49,7 +49,7 @@ export function buildManifest(target, version) {
     return {
       manifest_version: 3,
       ...shared,
-      permissions: ['storage', 'scripting', 'tabs', 'sidePanel', 'alarms'],
+      permissions: ['storage', 'scripting', 'sidePanel', 'alarms'],
       host_permissions: [CLAUDE_HOST],
       action: toolbarButton,
       side_panel: { default_path: PANEL_PAGE },
