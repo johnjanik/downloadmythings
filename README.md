@@ -39,8 +39,22 @@ npm install
 ```bash
 npm run build
 ```
+## Load and Debug Extensions Temporarily
 
-Then load `dist/chrome` as an unpacked extension in Chrome, or `dist/firefox/manifest.json` as a temporary add-on in Firefox.
+### Chrome
+
+1. Settings
+2. Extensions in the left sidebar.
+3. Toggle on Developer Mode
+4. Then load `dist/chrome` as an unpacked extension in Chrome, 
+
+### Firefox 
+
+Firefox does not use a single "Developer mode" toggle switch for extensions. Instead, you use `about:debugging` to temporarily load and debug extensions. 
+
+1. Type `about:debugging` in the Firefox address bar and press Enter.
+2. Select `This Firefox` in the left sidebar.
+3. Click Load Temporary Add-on... and select your extension's `manifest.json` file found in `dist/firefox/manifest.json` as a temporary add-on in Firefox.
 
 ## Use
 
