@@ -89,6 +89,8 @@ const check = (name, ok, detail) => { results.push({ name, ok }); console.log(`$
 
   let blockExtensionPages = false; // when true, direct calls from extension pages get HTTP 403
   const apiCalls = [];
+  const writes = []; // every call that would change the account: "METHOD path"
+  const hoursFromNow = (hours) => new Date(Date.now() + hours * 3600 * 1000).toISOString();
   await context.route('https://claude.ai/**', async (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -108,6 +110,20 @@ const check = (name, ok, detail) => { results.push({ name, ok }); console.log(`$
     const bin = (body, type) => route.fulfill({ status: 200, contentType: type, body });
     if (url.pathname === `/api/organizations/${ORG}/projects`) return json(projectList);
     if (url.pathname === `/api/organizations/${ORG}/memories`) return json([{ uuid: 'mem-1', content: 'Prefers short answers' }]);
+    if (url.pathname === `/api/organizations/${ORG}/usage`) {
+      return json({ five_hour: { utilization: 37.4, resets_at: hoursFromNow(2.5) }, seven_day: { utilization: 91, resets_at: hoursFromNow(70) }, seven_day_opus: null });
+    }
+    // The calls that change the account. This stand-in does not know the batch
+    // move call, so the extension has to fall back to moving chats one by one.
+    const method = request.method();
+    if (method !== 'GET') {
+      writes.push(`${method} ${url.pathname.replace(`/api/organizations/${ORG}`, '')}`);
+      const target = url.pathname.match(/chat_conversations\/([a-f0-9-]+)$/);
+      const conv = target && list.find((x) => x.uuid === target[1]);
+      if (method === 'PUT' && conv) { Object.assign(conv, JSON.parse(request.postData() || '{}')); return json(conv); }
+      if (method === 'DELETE' && conv) { list.splice(list.indexOf(conv), 1); return route.fulfill({ status: 204, body: '' }); }
+      return route.fulfill({ status: 404, contentType: 'application/json', body: '{}' });
+    }
     if (url.pathname === `/api/organizations/${ORG}/projects/p1`) return json({ ...projectList[0], prompt_template: 'Always answer in French.' });
     if (url.pathname === `/api/organizations/${ORG}/projects/p2`) return json(projectList[1]);
     if (url.pathname === `/api/organizations/${ORG}/projects/p1/docs`) return json(projectDocs);
@@ -219,11 +235,45 @@ const check = (name, ok, detail) => { results.push({ name, ok }); console.log(`$
       && (await panel.locator('#projectCounts').textContent()) === '5 files · 1 chat',
     await panel.locator('#projectCounts').textContent());
 
+  // Limits and sizes
+  await panel.waitForFunction(() => document.querySelectorAll('#usageRows .meter').length === 2 && !document.getElementById('chatSize').hidden, null, { timeout: 15000 });
+  const meters = await panel.evaluate(() => Array.from(document.querySelectorAll('#usageRows .meter')).map((meter) => ({
+    text: meter.querySelector('.meter-row').textContent, hint: meter.querySelector('.hint').textContent,
+    width: meter.querySelector('.progress-bar').style.width, high: meter.querySelector('.progress-bar').classList.contains('high'),
+  })));
+  check('the limits card shows the session and the week as claude.ai reports them',
+    meters[0].text === 'Current session (5 hours)37%' && meters[0].width === '37%' && /^resets in 2 h (29|30) min$/.test(meters[0].hint) && !meters[0].high
+      && meters[1].text === 'This week, all models91%' && meters[1].high && meters[1].hint === 'resets in 3 days',
+    JSON.stringify(meters));
+  check('the open conversation shows an estimate of its size',
+    /^About \d+ tokens$/.test(await panel.locator('#chatSizeLabel').textContent()) && (await panel.locator('#chatSizePercent').textContent()) === '0% of a 200k window',
+    await panel.locator('#chatSizeLabel').textContent());
+
+  await panel.locator('#sizeBox summary').click();
+  const sizes = await panel.evaluate(() => ({
+    summary: document.getElementById('sizeSummary').textContent,
+    rows: Array.from(document.querySelectorAll('#sizeList li')).map((row) => `${row.querySelector('.name').textContent}: ${row.querySelector('.meta').textContent}`),
+  }));
+  check('"What is filling this project" ranks the files by size and says which have none',
+    sizes.summary === 'About 6 tokens of text in 5 files, largest first. claude.ai gives no size for 3 of them.'
+      && sizes.rows[0] === 'meeting-notes.docx: About 4 tokens · 67% of the total' && sizes.rows[1] === 'brief.md: About 2 tokens · 33% of the total'
+      && sizes.rows[2] === 'budget.xlsx: Size not reported',
+    JSON.stringify(sizes));
+  await panel.locator('#sizeList li', { hasText: 'brief.md' }).locator('input').check();
+  await panel.locator('#sizeList li', { hasText: 'handbook.pdf' }).locator('input').check();
+  const [pTicked] = await Promise.all([panel.waitForEvent('download'), panel.locator('#backupTicked', { hasText: 'Back up ticked files (2)' }).click()]);
+  const tickedZip = await unzip(pTicked);
+  check('"Back up ticked files" saves just those files',
+    tickedZip.name === 'Alpha project_selected-files.zip' && JSON.stringify(tickedZip.files) === JSON.stringify(['files/brief.md', 'files/handbook.pdf', 'manifest.json']),
+    `${tickedZip.name} ${JSON.stringify(tickedZip.files)}`);
+  await panel.waitForFunction(() => document.getElementById('progressCard').hidden);
+  await panel.locator('#sizeBox summary').click();
+
   // Dropdown lists are drawn by the browser: the control and its rows need solid, contrasting colours
   const dropdowns = await panel.evaluate(() => {
     const parse = (value) => { const m = value.match(/rgba?\(([^)]+)\)/)[1].split(',').map(Number); return { r: m[0], g: m[1], b: m[2], a: m.length > 3 ? m[3] : 1 }; };
     const luminance = (c) => [c.r, c.g, c.b].map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }).reduce((sum, v, i) => sum + v * [0.2126, 0.7152, 0.0722][i], 0);
-    return Array.from(document.querySelectorAll('select')).map((select) => {
+    return Array.from(document.querySelectorAll('select')).filter((select) => select.options.length > 0).map((select) => {
       const row = select.options[0];
       const background = parse(getComputedStyle(row).backgroundColor);
       const text = parse(getComputedStyle(row).color);
@@ -244,6 +294,13 @@ const check = (name, ok, detail) => { results.push({ name, ok }); console.log(`$
   check('"Download Entire Project" saves instructions, files, chats and a manifest',
     whole.name === 'Alpha project.zip' && ['instructions.md', 'files/brief.md', 'files/handbook.pdf', 'chats/Trip plan.md', 'manifest.json'].every((n) => whole.files.includes(n)),
     `${whole.name} ${JSON.stringify(whole.files)}`);
+  await panel.waitForSelector('#recoveryCard:not([hidden])');
+  const recovery = { text: await panel.locator('#recoveryText').textContent(), prompt: await panel.inputValue('#recoveryPrompt') };
+  check('files not saved as originals come with a prompt that asks Claude for them',
+    /^3 files could not be saved in the original format/.test(recovery.text)
+      && ['- meeting-notes.docx', '- diagram.png', '- budget.xlsx'].every((line) => recovery.prompt.includes(line))
+      && !recovery.prompt.includes('handbook.pdf') && !recovery.prompt.includes('brief.md'),
+    recovery.text);
 
   // Hand-off to Claude Code
   const [pcc] = await Promise.all([panel.waitForEvent('download'), panel.locator('#moveToClaudeCode').click()]);
@@ -427,6 +484,86 @@ const check = (name, ok, detail) => { results.push({ name, ok }); console.log(`$
   check('library exports the selected chats as one ZIP',
     /^downloadmythings-export-/.test(picked.name) && JSON.stringify(picked.files) === JSON.stringify(['Budget_ Q4_Q1_.md', 'Trip plan (2).md', 'Trip plan.md']),
     JSON.stringify(picked.files));
+  await panel.waitForFunction(() => document.getElementById('progressCard').hidden);
+
+  // Folders: the user's own grouping, kept in the extension
+  await panel.uncheck('#librarySelectAll');
+  check('with nothing ticked there is no action menu, and no folder filter before a folder exists',
+    !(await panel.locator('#libraryActions').isVisible()) && !(await panel.locator('#libraryFolder').isVisible()));
+  await panel.locator('#manageFolders').click();
+  await panel.fill('#newFolderName', '  Travel   plans ');
+  await panel.locator('#addFolder').click();
+  await panel.waitForSelector('#foldersList li');
+  const folderOptions = () => panel.evaluate(() => Array.from(document.getElementById('libraryFolder').options).map((option) => option.textContent));
+  check('a new folder appears in the list and in the filter, with a tidy name',
+    (await panel.locator('#foldersList li .name').textContent()) === 'Travel plans'
+      && JSON.stringify(await folderOptions()) === JSON.stringify(['All chats (3)', 'Travel plans (0)', 'Not in a folder (3)']),
+    JSON.stringify(await folderOptions()));
+
+  await panel.locator(`#libraryList li[data-id="${IDS[0]}"] input`).check();
+  await panel.locator(`#libraryList li[data-id="${IDS[2]}"] input`).check();
+  const actionLabels = await panel.evaluate(() => Array.from(document.getElementById('libraryAction').children).map((child) => (child.label || child.textContent)));
+  check('ticked chats get one menu: folders, projects, delete',
+    JSON.stringify(actionLabels) === JSON.stringify(['With the 2 ticked chats...', 'Put in a folder', 'Move to a project on claude.ai', 'Delete from claude.ai...']),
+    JSON.stringify(actionLabels));
+  await panel.selectOption('#libraryAction', { label: 'Travel plans' });
+  await panel.waitForFunction(() => /Put 2 chats in "Travel plans"/.test(document.getElementById('notice').textContent));
+  check('filing chats shows the folder on each row and counts it',
+    (await panel.locator(`#libraryList li[data-id="${IDS[0]}"] .meta`).first().textContent()) === 'Alpha project · Folder: Travel plans'
+      && (await panel.locator(`#libraryList li[data-id="${IDS[2]}"] .meta`).first().textContent()) === 'Folder: Travel plans'
+      && (await folderOptions())[1] === 'Travel plans (2)' && writes.length === 0,
+    JSON.stringify(await folderOptions()));
+  await panel.selectOption('#libraryFolder', { label: 'Travel plans (2)' });
+  await panel.waitForFunction(() => document.querySelectorAll('#libraryList li').length === 2);
+  check('the filter shows one folder at a time', (await panel.locator('#libraryCount').textContent()) === '2 of 3 chats');
+  await panel.selectOption('#libraryFolder', { label: 'Not in a folder (1)' });
+  await panel.waitForFunction(() => document.querySelectorAll('#libraryList li').length === 1);
+  check('and the chats in no folder', (await panel.locator('#libraryList li').getAttribute('data-id')) === IDS[1]);
+  await panel.selectOption('#libraryFolder', '');
+  await panel.waitForFunction(() => document.querySelectorAll('#libraryList li').length === 3);
+
+  // "New folder..." from the menu files the ticked chats into the folder once it is named
+  await panel.locator(`#libraryList li[data-id="${IDS[2]}"] input`).uncheck();
+  await panel.selectOption('#libraryAction', { label: 'New folder...' });
+  await panel.fill('#newFolderName', 'Work');
+  await panel.press('#newFolderName', 'Enter');
+  await panel.waitForFunction(() => /Put 1 chat in "Work"/.test(document.getElementById('notice').textContent));
+  check('a folder made from the menu receives the ticked chats',
+    JSON.stringify(await folderOptions()) === JSON.stringify(['All chats (3)', 'Travel plans (1)', 'Work (1)', 'Not in a folder (1)']),
+    JSON.stringify(await folderOptions()));
+
+  // Rename, then delete a folder: the chats stay
+  await panel.locator('#foldersList li', { hasText: 'Travel plans' }).locator('button[title^="Rename"]').click();
+  await panel.locator('#foldersList input[type="text"]').fill('Trips');
+  await panel.locator('#foldersList input[type="text"]').press('Enter');
+  await panel.waitForFunction(() => Array.from(document.querySelectorAll('#foldersList .name')).some((el) => el.textContent === 'Trips'));
+  await panel.locator('#foldersList li', { hasText: 'Trips' }).locator('button[title^="Delete the folder"]').click();
+  check('deleting a folder asks first and says the chats stay',
+    (await panel.locator('#confirmTitle').textContent()) === 'Delete the folder "Trips"?'
+      && /^Its 1 chat and 0 projects stay exactly as they are on claude\.ai/.test(await panel.locator('#confirmText').textContent())
+      && !(await panel.locator('#confirmCopyBox').isVisible()));
+  await panel.locator('#confirmGo').click();
+  await panel.waitForFunction(() => document.querySelectorAll('#foldersList li').length === 1);
+  check('the folder is gone, its chat is unfiled, and claude.ai was never asked to change anything',
+    JSON.stringify(await folderOptions()) === JSON.stringify(['All chats (3)', 'Work (1)', 'Not in a folder (2)'])
+      && (await panel.locator('#libraryList li').count()) === 3 && writes.length === 0,
+    JSON.stringify(await folderOptions()));
+
+  // A project is filed from its card, and the picker then groups by folder
+  await panel.locator('.tab[data-tab="export"]').click();
+  await panel.selectOption('#projectFolder', { label: 'Work' });
+  await panel.waitForFunction(() => document.querySelectorAll('#projectPicker optgroup').length === 2);
+  const pickerGroups = await panel.evaluate(() => Array.from(document.querySelectorAll('#projectPicker optgroup')).map((group) => `${group.label}: ${Array.from(group.children).map((option) => option.textContent).join(', ')}`));
+  check('the project picker groups projects by folder',
+    JSON.stringify(pickerGroups) === JSON.stringify(['Work: Alpha project', 'Not in a folder: Beta']) && (await panel.inputValue('#projectPicker')) === 'p1',
+    JSON.stringify(pickerGroups));
+  const storedFolders = await panel.evaluate(() => new Promise((resolve) => chrome.storage.local.get(['folders'], (r) => resolve(r.folders))));
+  check('folders are kept in the extension\'s own storage',
+    storedFolders.folders.length === 1 && storedFolders.folders[0].name === 'Work'
+      && storedFolders.chats[IDS[0]] === storedFolders.folders[0].id && storedFolders.projects.p1 === storedFolders.folders[0].id,
+    JSON.stringify(storedFolders));
+  await panel.locator('.tab[data-tab="library"]').click();
+  await panel.locator(`#libraryList li[data-id="${IDS[0]}"] input`).uncheck();
 
   // The panel on a tab that is not claude.ai: nothing is "open", so the user picks
   apiCalls.length = 0;
@@ -597,6 +734,58 @@ const check = (name, ok, detail) => { results.push({ name, ok }); console.log(`$
     try { const r = await fetch(`chrome-extension://${id}/browse.html`); return `fetched ${r.status}`; } catch (e) { return 'blocked'; }
   }, extId);
   check('a website cannot load browse.html', probe === 'blocked', probe);
+
+  // --- 11. Changing the account: move chats to a project, delete chats. Both ask first.
+  const EXTRA = ['aaaaaaaa-0000-4000-8000-00000000000a', 'aaaaaaaa-0000-4000-8000-00000000000b'];
+  list.push(
+    { uuid: EXTRA[0], name: 'Old notes', model: 'claude-sonnet-4-6', created_at: '2025-01-01T10:00:00Z', updated_at: '2025-01-02T10:00:00Z' },
+    { uuid: EXTRA[1], name: 'Scratch', model: 'claude-sonnet-4-6', created_at: '2025-02-01T10:00:00Z', updated_at: '2025-02-02T10:00:00Z' },
+  );
+  const manage = await context.newPage(); watch(manage, 'manage');
+  await manage.goto(`chrome-extension://${extId}/panel.html#library`);
+  await manage.waitForFunction(() => document.querySelectorAll('#libraryList li').length === 5, null, { timeout: 15000 });
+  const tickExtras = async () => { for (const id of EXTRA) await manage.locator(`#libraryList li[data-id="${id}"] input`).check(); };
+  const noticeText = () => manage.locator('#notice').textContent();
+  writes.length = 0;
+
+  await tickExtras();
+  await manage.selectOption('#libraryAction', { label: 'Beta' });
+  check('moving chats asks first and states the count',
+    (await manage.locator('#confirmTitle').textContent()) === 'Move 2 chats to "Beta"?' && (await manage.locator('#confirmGo').textContent()) === 'Move 2 chats'
+      && !(await manage.locator('#confirmCopyBox').isVisible()) && writes.length === 0);
+  await manage.locator('#confirmCancel').click();
+  await manage.waitForTimeout(300);
+  check('cancelling the question changes nothing', writes.length === 0 && !(await manage.locator('#confirmCard').isVisible()));
+
+  await manage.selectOption('#libraryAction', { label: 'Beta' });
+  await manage.locator('#confirmGo').click();
+  await manage.waitForFunction(() => /^Moved/.test(document.getElementById('notice').textContent), null, { timeout: 15000 });
+  check('confirmed, the chats move, and the result is read back from claude.ai',
+    (await noticeText()) === 'Moved 2 chats to "Beta".'
+      && JSON.stringify(writes) === JSON.stringify(['POST /chat_conversations/move_many', `PUT /chat_conversations/${EXTRA[0]}`, `PUT /chat_conversations/${EXTRA[1]}`])
+      && list.filter((c) => c.project_uuid === 'p2').map((c) => c.uuid).join() === EXTRA.join()
+      && (await manage.locator(`#libraryList li[data-id="${EXTRA[0]}"] .meta`).first().textContent()) === 'Beta',
+    `${await noticeText()} ${JSON.stringify(writes)}`);
+
+  writes.length = 0;
+  await manage.selectOption('#libraryAction', { label: 'Delete from claude.ai...' });
+  check('deleting asks first, states the count, says it is final, and offers a copy',
+    (await manage.locator('#confirmTitle').textContent()) === 'Delete 2 chats from claude.ai?' && (await manage.locator('#confirmGo').textContent()) === 'Delete 2 chats'
+      && /cannot be undone/.test(await manage.locator('#confirmText').textContent())
+      && (await manage.locator('#confirmCopy').isChecked()) && (await manage.locator('#confirmGo').getAttribute('class')) === 'btn danger' && writes.length === 0);
+  const [pCopy] = await Promise.all([manage.waitForEvent('download', { timeout: 20000 }), manage.locator('#confirmGo').click()]);
+  const copyZip = await unzip(pCopy);
+  await manage.waitForFunction(() => /^Deleted/.test(document.getElementById('notice').textContent), null, { timeout: 15000 });
+  check('confirmed, a copy is saved first and only the ticked chats are deleted',
+    JSON.stringify(copyZip.files) === JSON.stringify(['Old notes.md', 'Scratch.md'])
+      && (await noticeText()) === `Deleted 2 chats from claude.ai. A copy is in ${copyZip.name}.`
+      && JSON.stringify(writes.slice().sort()) === JSON.stringify([`DELETE /chat_conversations/${EXTRA[0]}`, `DELETE /chat_conversations/${EXTRA[1]}`])
+      && list.length === 3 && list.every((c) => IDS.includes(c.uuid)),
+    `${await noticeText()} ${JSON.stringify(writes)} ${JSON.stringify(copyZip.files)}`);
+  check('the Library drops the deleted chats and their ticks',
+    (await manage.locator('#libraryList li').count()) === 3 && (await manage.locator('#libraryExport').textContent()) === 'Export selected'
+      && !(await manage.locator('#libraryActions').isVisible()));
+  await manage.close();
 
   // Errors this test causes on purpose: refused direct calls (step 5), files
   // the stand-in does not serve (404), and the blocked fetch of an extension

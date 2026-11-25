@@ -58,6 +58,9 @@ Your organization is detected automatically. If you see "Could not find your org
 | "Sync to a folder" is missing | It needs Chrome or Edge. Firefox does not give extensions access to a folder |
 | Sync says it needs permission again | The browser withdraws folder access from time to time. Press **Sync now** and allow it |
 | An automatic backup did not run | The browser must be open. A missed run happens about a minute after the browser next starts. The Backups card shows the last run and its result |
+| Moving chats reports that claude.ai moved nothing, or returns an HTTP error | claude.ai's move call is undocumented and may differ from what the extension sends. Nothing was changed. Please [open an issue](https://github.com/johnjanik/downloadmythings/issues) with the message shown |
+| "claude.ai did not return your limits" | The limits call is undocumented and not every account has it. The rest of the extension is unaffected |
+| A folder is missing in another browser | Folders are kept in the extension on one computer and are not shared |
 | Something else | Options, then **attach a diagnostics file**, and [open an issue](https://github.com/johnjanik/downloadmythings/issues). The file holds versions, counts and recent errors, with all IDs removed |
 
 ## Browser differences

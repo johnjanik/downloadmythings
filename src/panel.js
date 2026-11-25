@@ -17,7 +17,8 @@ const state = {
   project: null,       // the project the card is showing
   knowledge: null,     // that project's files, once listed
   job: null,           // { cancelled } while an export runs
-  syncFolder: null     // the folder chosen for "Sync to a folder"
+  syncFolder: null,    // the folder chosen for "Sync to a folder"
+  folders: { folders: [], chats: {}, projects: {} } // the user's own folders (lib/folders.js)
 };
 
 const $ = (id) => document.getElementById(id);
@@ -159,9 +160,26 @@ function renderChatCard() {
 function renderProjectCard() {
   const picker = $('projectPicker');
   picker.replaceChildren(new Option(state.projects.length > 0 ? 'Choose a project...' : 'No projects found', ''));
+  // Projects the user has filed are listed under their folder, the rest below
+  const filed = state.projects.some((project) => folderOf(state.folders, 'projects', project.uuid));
+  const groups = new Map();
   for (const project of state.projects) {
-    picker.add(new Option(project.name || 'Untitled Project', project.uuid));
+    const option = new Option(project.name || 'Untitled Project', project.uuid);
+    if (!filed) {
+      picker.add(option);
+      continue;
+    }
+    const folder = folderOf(state.folders, 'projects', project.uuid);
+    const label = folder ? folder.name : 'Not in a folder';
+    if (!groups.has(label)) {
+      const group = document.createElement('optgroup');
+      group.label = label;
+      groups.set(label, { group, unfiled: !folder });
+    }
+    groups.get(label).group.appendChild(option);
   }
+  const ordered = [...groups.values()].sort((a, b) => a.unfiled - b.unfiled || a.group.label.localeCompare(b.group.label));
+  picker.append(...ordered.map((entry) => entry.group));
   if (state.project && !state.projects.some((project) => project.uuid === state.project.uuid)) {
     picker.add(new Option(state.project.name || 'Open project', state.project.uuid));
   }
@@ -231,6 +249,7 @@ function renderExportTab() {
   renderChatCard();
   renderProjectCard();
   renderExplorer();
+  renderInsights(); // panel-insights.js: chat size, what fills the project, the project's folder
 }
 
 // ---------------------------------------------------------------- loading
@@ -304,6 +323,7 @@ async function loadAccount() {
 
   await applyContext();
   renderLibrary();
+  loadUsage(); // panel-insights.js
 }
 
 // ---------------------------------------------------------------- single downloads
@@ -380,6 +400,7 @@ async function runJob(job) {
   state.job = { cancelled: false, controller: new AbortController() };
   setRequestSignal(state.job.controller.signal); // Cancel aborts requests already in flight
   $('handoffCard').hidden = true;
+  $('recoveryCard').hidden = true;
   hideNotice();
   $('progressCard').hidden = false;
   setProgress('Preparing export...', 0);
@@ -394,6 +415,7 @@ async function runJob(job) {
 
   try {
     let message = null;
+    let problem = false; // show the message as a warning, not as good news
     let cancelledMessage = 'Export cancelled. ZIP files already saved stay on disk.';
 
     if (job.type === 'project') {
@@ -403,6 +425,76 @@ async function runJob(job) {
       if (!result.cancelled) {
         message = `Saved ${savedZipNames(result)}. ${describeProjectExport(result.summary)}`;
         if (options.layout === 'claude-code') showHandoff(result.filename);
+        else showRecovery(filesNeedingRecovery(result.manifests));
+      }
+    } else if (job.type === 'files-selected') {
+      const project = state.projects.find((item) => item.uuid === job.projectId)
+        || await getProject(state.orgId, job.projectId);
+      const base = options.zipName || project.name || 'Project';
+      const result = await exportProjectsToZip(state.orgId, [project], [], {
+        ...options,
+        includeInstructions: false, includeKnowledge: true, includeProjectChats: false,
+        knowledgeNames: job.names, zipFilename: `${base}_selected-files`
+      }, hooks);
+      if (!result.cancelled) {
+        message = `Saved ${savedZipNames(result)}. ${describeProjectExport(result.summary)}`;
+        showRecovery(filesNeedingRecovery(result.manifests));
+      }
+    } else if (job.type === 'move') {
+      const project = state.projects.find((item) => item.uuid === job.projectId);
+      if (!project) throw new Error('That project no longer exists.');
+      const name = project.name || 'Untitled Project';
+      const result = await moveChatsToProject(state.orgId, job.ids, job.projectId, {
+        isCancelled: hooks.isCancelled,
+        onProgress: (done, total) => setProgress(`Moving ${done} of ${total} chats`, (done / total) * 100)
+      });
+      state.conversations = result.conversations;
+      cancelledMessage = `Stopped. ${result.moved} of ${plural(result.requested, 'chat')} had been moved to "${name}".`;
+      if (!result.cancelled) {
+        if (result.moved === result.requested) {
+          message = `Moved ${plural(result.moved, 'chat')} to "${name}".`;
+        } else {
+          problem = true;
+          message = result.moved === 0
+            ? `claude.ai accepted the request but moved nothing. The chats are where they were.`
+            : `Moved ${result.moved} of ${plural(result.requested, 'chat')} to "${name}". claude.ai left the others where they were.`;
+        }
+      }
+    } else if (job.type === 'delete') {
+      const wanted = new Set(job.ids);
+      const picked = state.conversations.filter((conv) => wanted.has(conv.uuid));
+      let copied = '';
+      let stoppedEarly = false;
+      cancelledMessage = 'Stopped. Nothing was deleted.';
+      if (job.copyFirst) {
+        // The copy must be complete before anything is deleted
+        const copyOptions = { ...options, format: options.format === 'pdf' ? 'markdown' : options.format };
+        const copy = await exportConversationsToZip(state.orgId, picked, copyOptions, {
+          isCancelled: hooks.isCancelled,
+          onProgress: (progress) => {
+            if (progress.phase === 'zip') setProgress('Saving the copy...', progress.percent);
+            else setProgress(`Saving a copy first: ${progress.completed + progress.failed} of ${progress.total} chats`, ((progress.completed + progress.failed) / progress.total) * 100);
+          }
+        });
+        if (copy.cancelled) stoppedEarly = true;
+        else if (copy.failed > 0) throw new Error(`${copy.failed} of ${plural(picked.length, 'chat')} could not be saved, so nothing was deleted.`);
+        else if (copy.included < picked.length) throw new Error('The copy would not hold every chat with the current export settings, so nothing was deleted.');
+        else copied = ` A copy is in ${copy.filename}.`;
+      }
+      if (!stoppedEarly) {
+        const result = await deleteChats(state.orgId, picked.map((conv) => conv.uuid), {
+          isCancelled: hooks.isCancelled,
+          onProgress: (done, total) => setProgress(`Deleting ${done} of ${total} chats`, (done / total) * 100)
+        });
+        state.conversations = result.conversations;
+        forgetDeletedChats(job.ids); // panel-library.js
+        cancelledMessage = `Stopped. ${result.deleted} of ${plural(result.requested, 'chat')} had been deleted.${copied}`;
+        if (!result.cancelled) {
+          problem = result.deleted < result.requested;
+          message = problem
+            ? `Deleted ${result.deleted} of ${plural(result.requested, 'chat')}. ${result.firstError ? `First problem: ${result.firstError}.` : 'claude.ai still lists the others.'}${copied}`
+            : `Deleted ${plural(result.deleted, 'chat')} from claude.ai.${copied}`;
+        }
       }
     } else if (job.type === 'backup-projects') {
       const wanted = new Set(job.projectIds);
@@ -447,7 +539,7 @@ async function runJob(job) {
       }
     }
 
-    if (message) showNotice(message, 'info');
+    if (message) showNotice(message, problem ? undefined : 'info');
     else showNotice(cancelledMessage, 'info');
     if (job.backup) await recordBackupRun(message || 'Stopped before it finished');
   } catch (error) {
@@ -458,7 +550,7 @@ async function runJob(job) {
     setRequestSignal(null);
     state.job = null;
     $('progressCard').hidden = true;
-    renderProjectCard();
+    renderExportTab();
     renderLibrary();
   }
 }
@@ -467,7 +559,7 @@ async function runJob(job) {
 // From the popup, hand the job to a tab; anywhere else, run it here.
 async function startJob(job) {
   if (state.viewMode === 'popup') {
-    await storageSet('local', { panelJob: job });
+    await storageSet('local', { panelJob: { ...job, handedOverAt: Date.now() } });
     chrome.tabs.create({ url: chrome.runtime.getURL('panel.html') });
     window.close();
     return;
@@ -774,6 +866,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   await loadOptions();
+  state.folders = await loadFolders();
   await setUpDisplayMode();
   await setUpSync();
   if (location.hash === '#sync') $('syncCard').scrollIntoView();
@@ -791,8 +884,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   // A job handed over by the popup, or a backup started by the schedule
   if (state.viewMode === 'tab') {
     const stored = await storageGet('local', ['panelJob']);
-    if (stored.panelJob) {
-      chrome.storage.local.remove('panelJob');
+    // Only a job handed over a moment ago: a stale one (the tab never opened)
+    // must not start by surprise later, least of all a deletion
+    const fresh = stored.panelJob && Date.now() - (stored.panelJob.handedOverAt || 0) < 2 * 60 * 1000;
+    if (stored.panelJob) chrome.storage.local.remove('panelJob');
+    if (fresh) {
       runJob(stored.panelJob);
     } else if (location.hash === '#backup-run') {
       runScheduledBackup();

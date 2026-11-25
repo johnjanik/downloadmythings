@@ -72,6 +72,13 @@
     .btn.primary:hover { background: var(--primary-hover); }
     .btn:disabled { background: var(--disabled-bg); color: var(--disabled-text); border-color: transparent; cursor: not-allowed; }
     .btn-row { display: flex; gap: 8px; }
+    .btn.danger { background: var(--error-bg); color: var(--error-text); border-color: var(--error-color); }
+    .btn.danger:hover { background: var(--error-color); color: var(--on-primary); }
+    .btn-row input[type="text"] {
+      flex: 1; min-width: 0; padding: 8px 10px; border-radius: 8px; font: inherit; color: var(--text-primary);
+      background: var(--secondary-color); border: var(--hairline) solid var(--input-border);
+    }
+    .btn-row .btn.narrow { width: auto; flex: none; }
     .icon-btn {
       width: 30px; height: 30px; flex: none; border-radius: 9px; cursor: pointer;
       background: transparent; color: var(--text-secondary);
@@ -124,6 +131,15 @@
     .notice { padding: 10px 12px; border-radius: var(--radius-control); background: var(--error-bg); color: var(--error-text); }
     .notice.info { background: var(--info-bg); color: var(--info-text); }
     .progress-track { height: 8px; border-radius: 999px; background: var(--progress-bg); overflow: hidden; }
+    .progress-track.thin { height: 5px; }
+    .progress-bar.high { background: var(--error-color); }
+    .meter { display: flex; flex-direction: column; gap: 4px; }
+    .meter-row { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--text-secondary); }
+    .meter-row .value { color: var(--text-primary); white-space: nowrap; }
+    #usageRows { display: flex; flex-direction: column; gap: 10px; }
+    .card h2.grow { flex: 1; }
+    .library-bar select.plain { flex: 1; min-width: 0; }
+    #sizeList .main { display: flex; flex-direction: column; gap: 3px; }
     .progress-bar { height: 100%; width: 0%; background: var(--primary-color); transition: width 0.25s; }
 
     footer {
@@ -154,6 +170,11 @@
       <section class="card" id="chatCard" hidden>
         <div class="eyebrow">Open conversation</div>
         <div class="context-name" id="chatName"></div>
+        <div class="meter" id="chatSize" hidden>
+          <div class="meter-row"><span id="chatSizeLabel"></span><span class="value" id="chatSizePercent"></span></div>
+          <div class="progress-track thin"><div class="progress-bar" id="chatSizeBar"></div></div>
+          <div class="hint">An estimate from the text of this conversation. Project files and instructions add to it.</div>
+        </div>
         <button class="btn primary" id="downloadChat">Download this chat</button>
       </section>
 
@@ -167,6 +188,10 @@
         <label class="field">
           <span>Choose a project</span>
           <select id="projectPicker"></select>
+        </label>
+        <label class="field" id="projectFolderBox" hidden>
+          <span>Folder</span>
+          <select id="projectFolder"></select>
         </label>
         <button class="btn primary" id="downloadProject" disabled>Download Entire Project</button>
         <button class="btn" id="moveToClaudeCode" disabled title="A ZIP laid out for Claude Code: CLAUDE.md, docs/ and chats/">Move to Claude Code</button>
@@ -224,6 +249,14 @@
         <button class="btn" id="copyHandoff">Copy prompt</button>
       </section>
 
+      <section class="card" id="recoveryCard" hidden>
+        <h2>Get the originals from Claude</h2>
+        <p id="recoveryText"></p>
+        <textarea id="recoveryPrompt" class="prompt" rows="6" readonly></textarea>
+        <button class="btn" id="copyRecovery">Copy prompt</button>
+        <div class="hint">Paste it into a new chat inside this project on claude.ai. Claude needs code execution and file creation switched on in its settings.</div>
+      </section>
+
       <section class="card" id="explorerCard" hidden>
         <details id="filesBox">
           <summary>Files <span class="count" id="filesCount">0</span></summary>
@@ -233,6 +266,23 @@
           <summary>Chats <span class="count" id="chatsCount">0</span></summary>
           <ul class="rows" id="chatsList"></ul>
         </details>
+        <details id="sizeBox">
+          <summary>What is filling this project</summary>
+          <div class="settings">
+            <div class="hint" id="sizeSummary"></div>
+            <ul class="rows" id="sizeList"></ul>
+            <button class="btn" id="backupTicked" disabled>Back up ticked files</button>
+          </div>
+        </details>
+      </section>
+
+      <section class="card" id="usageCard" hidden>
+        <div class="context-row">
+          <h2 class="grow">Your Claude limits</h2>
+          <button class="icon-btn" id="refreshUsage" title="Refresh limits" aria-label="Refresh limits">&#8635;</button>
+        </div>
+        <div id="usageRows"></div>
+        <div class="hint" id="usageNote"></div>
       </section>
 
       <section class="card">
@@ -295,10 +345,36 @@
       </div>
       <div class="hint" id="deepSearchStatus" hidden></div>
       <div class="library-bar">
+        <select class="plain" id="libraryFolder" aria-label="Show folder" hidden></select>
+        <button class="btn" id="manageFolders">Folders</button>
+      </div>
+      <section class="card" id="foldersCard" hidden>
+        <h2>Folders</h2>
+        <p>Group chats and projects your own way. Folders are kept on this computer. Nothing changes on claude.ai.</p>
+        <ul class="rows" id="foldersList"></ul>
+        <div class="btn-row">
+          <input type="text" id="newFolderName" maxlength="60" placeholder="New folder name" aria-label="New folder name">
+          <button class="btn narrow" id="addFolder">Add folder</button>
+        </div>
+        <div class="hint">To file chats, tick them below and choose a folder. A project is filed from its card on the Export tab.</div>
+      </section>
+      <div class="library-bar">
         <input type="checkbox" id="librarySelectAll" aria-label="Select all shown">
         <span class="grow" id="libraryCount">Loading...</span>
         <button class="btn primary" id="libraryExport" disabled>Export selected</button>
       </div>
+      <div class="library-bar" id="libraryActions" hidden>
+        <select class="plain" id="libraryAction" aria-label="Do something with the selected chats"></select>
+      </div>
+      <section class="card" id="confirmCard" hidden>
+        <h2 id="confirmTitle"></h2>
+        <p id="confirmText"></p>
+        <label class="check" id="confirmCopyBox" hidden><input type="checkbox" id="confirmCopy" checked> Save a copy first (ZIP)</label>
+        <div class="btn-row">
+          <button class="btn" id="confirmCancel">Cancel</button>
+          <button class="btn" id="confirmGo"></button>
+        </div>
+      </section>
       <section class="card">
         <ul class="rows" id="libraryList"></ul>
       </section>
@@ -335,7 +411,11 @@
   <script src="lib/account.js"></script>
   <script src="lib/search.js"></script>
   <script src="lib/sync.js"></script>
+  <script src="lib/usage.js"></script>
+  <script src="lib/folders.js"></script>
+  <script src="lib/manage.js"></script>
   <script src="panel.js"></script>
+  <script src="panel-insights.js"></script>
   <script src="panel-library.js"></script>
 </body>
 </html>

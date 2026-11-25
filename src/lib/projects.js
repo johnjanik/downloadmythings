@@ -28,7 +28,9 @@ function normalizeProjectOptions(options) {
     includeProjectChats: o.includeProjectChats !== false,
     fileFormat: o.fileFormat === 'markdown' ? 'markdown' : 'native', // knowledge files: as stored, or text as .md
     zipFilename: typeof o.zipFilename === 'string' ? o.zipFilename : '',
-    layout: o.layout === 'claude-code' ? 'claude-code' : 'project'
+    layout: o.layout === 'claude-code' ? 'claude-code' : 'project',
+    // Only these knowledge files, by name; null = all of them
+    knowledgeNames: Array.isArray(o.knowledgeNames) ? o.knowledgeNames.slice() : null
   };
 }
 
@@ -76,6 +78,47 @@ function mergeProjectKnowledge(docs, files) {
     }
   }
   return items;
+}
+
+// "What is filling this project": the knowledge files, largest first, each
+// with an estimate of its tokens and its share of the total. A file claude.ai
+// lists without its text has no known size: `tokens` is null and it goes last.
+function rankKnowledgeBySize(items) {
+  const sized = (items || []).map((item) => ({
+    item,
+    name: item.name,
+    tokens: typeof item.text === 'string' ? Math.ceil(item.text.length / 4) : null
+  }));
+  const total = sized.reduce((sum, row) => sum + (row.tokens || 0), 0);
+  for (const row of sized) {
+    row.share = row.tokens === null || total === 0 ? null : Math.round((row.tokens / total) * 100);
+  }
+  sized.sort((a, b) => (b.tokens === null ? -1 : b.tokens) - (a.tokens === null ? -1 : a.tokens) || a.name.localeCompare(b.name));
+  return { rows: sized, totalTokens: total, unknown: sized.filter((row) => row.tokens === null).length };
+}
+
+// Knowledge files a project export could not save as the original file
+function filesNeedingRecovery(manifests) {
+  const names = [];
+  for (const manifest of manifests || []) {
+    for (const record of manifest.knowledge || []) {
+      if (record.fidelity !== 'original') names.push(record.name || record.path);
+    }
+  }
+  return names;
+}
+
+// A prompt for a chat inside the project: Claude can reach the project's files
+// from its own tools and hand back the originals claude.ai would not serve here.
+function buildRecoveryPrompt(names) {
+  return [
+    'I am backing up this project and could not download some of its files in their original format.',
+    'Using your file tools, find these files in this project\'s knowledge (they are usually under /mnt/project/), put unchanged copies of them into one ZIP archive, and give me the ZIP to download:',
+    '',
+    ...names.map((name) => `- ${name}`),
+    '',
+    'Copy the files byte for byte. Do not rewrite, convert or summarise them. If you cannot read one as a file, say which one, and do not recreate it from memory.'
+  ].join('\n');
 }
 
 // Everything one project contributes to the ZIP. `root` is the folder prefix
@@ -156,7 +199,8 @@ async function collectProject(orgId, project, conversations, options, root, hook
     try { docs = await listProjectDocs(orgId, project.uuid); } catch (error) { fail('knowledge documents', 'docs', error); }
     try { files = await listProjectFiles(orgId, project.uuid); } catch (error) { fail('knowledge files', 'files', error); }
 
-    const items = mergeProjectKnowledge(docs, files);
+    const wantedNames = o.knowledgeNames ? new Set(o.knowledgeNames) : null;
+    const items = mergeProjectKnowledge(docs, files).filter((item) => !wantedNames || wantedNames.has(item.name));
     const usedNames = new Set();
     for (let i = 0; i < items.length && !isCancelled(); i++) {
       step(`Knowledge file ${i + 1} of ${items.length}: ${items[i].name}`);
@@ -330,6 +374,9 @@ if (typeof module !== 'undefined' && module.exports) {
     DMT_CLAUDE_CODE_PROMPT,
     buildClaudeMd,
     collectProject,
+    rankKnowledgeBySize,
+    filesNeedingRecovery,
+    buildRecoveryPrompt,
     summarizeProjectManifests,
     describeProjectExport,
     projectZipFilename,
