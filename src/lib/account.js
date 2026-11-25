@@ -70,7 +70,8 @@ async function exportEverything(orgId, projects, conversations, options, hooks) 
     const folder = uniqueFilename(sanitizeFilename(name), '', usedRoots);
     const result = await collectProject(orgId, project, conversations, o, `Projects/${folder}/`, {
       isCancelled,
-      onStep: (label) => report(`${name}: ${label}`, percent())
+      onStep: (label) => report(`${name}: ${label}`, percent()),
+      emit: (entries) => writer.add(entries)
     });
     await writer.add(result.entries);
     exportedChatIds.push(...result.exportedChatIds);

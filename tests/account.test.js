@@ -284,11 +284,21 @@ describe('exportProjectsToZip', () => {
 
   it('starts a new ZIP part once the content passes the limit', async () => {
     stubTwoProjects();
-    const result = await exportProjectsToZip(ORG, twoProjects, [], { zipFilename: 'both', partLimitBytes: 1 });
+    // The limit is passed when Alpha's manifest is added, so Alpha fills part 1 exactly
+    const result = await exportProjectsToZip(ORG, twoProjects, [], { zipFilename: 'both', partLimitBytes: 200 });
     expect(result).toMatchObject({ cancelled: false, filename: 'both-part2.zip', parts: ['both-part1.zip', 'both-part2.zip'] });
     expect((await entriesOf(saved[0])).names.every((name) => name.startsWith('Alpha/'))).toBe(true);
     expect((await entriesOf(saved[1])).names.every((name) => name.startsWith('Beta/'))).toBe(true);
     expect(result.summary.projects).toBe(2);
+  });
+
+  it('splits one very large project across parts instead of holding it in memory', async () => {
+    stubTwoProjects();
+    const result = await exportProjectsToZip(ORG, [twoProjects[0]], [], { partLimitBytes: 1 });
+    expect(result.parts).toEqual(['Alpha-part1.zip', 'Alpha-part2.zip', 'Alpha-part3.zip']);
+    expect((await entriesOf(saved[0])).names).toEqual(['instructions.md']);
+    expect((await entriesOf(saved[1])).names).toEqual(['files/notes.md']);
+    expect((await entriesOf(saved[2])).names).toEqual(['manifest.json']); // the manifest closes the last part
   });
 
   it('saves nothing when cancelled while the ZIP is being built', async () => {
