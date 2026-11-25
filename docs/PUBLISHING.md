@@ -36,7 +36,7 @@ The Release workflow refuses a tag that does not match `package.json` or is not 
 
 **Description**:
 
-> DownloadMyThings saves your own work from claude.ai to your computer. It is free, open source and has no limits.
+> DownloadMyThings saves your own work from claude.ai to your computer and helps you keep it in order. It is free, open source and has no limits.
 >
 > - Whole projects: instructions, knowledge files and chats in one ZIP, or just the files, or just the chats
 > - Export everything: every project and every chat in the account in one action
@@ -45,6 +45,8 @@ The Release workflow refuses a tag that does not match `package.json` or is not 
 > - Backups on demand, or automatically every day or week
 > - A Library of every chat, with search inside messages from an index kept on your computer
 > - A manifest in every project ZIP that says how faithful each file is, with a SHA-256
+> - Folders for chats and projects, and bulk move and delete with a confirmation that states the count
+> - Your Claude limits and the size of the open chat at a glance
 > - Works from any tab, as a side panel or a popup
 >
 > Privacy: everything runs in your browser. The only site the extension contacts is claude.ai. There is no server, no analytics and no account.
@@ -61,14 +63,14 @@ The name does not contain another company's mark. The description names claude.a
 
 Needs a Chrome Web Store developer account, which has a small one-time registration fee. Upload `downloadmythings-chrome-<version>.zip`.
 
-**Single purpose**: Saves the signed-in user's own projects, chats and files from claude.ai to their computer.
+**Single purpose**: Lets the signed-in user save and organise their own projects, chats and files from claude.ai.
 
 **Permission justifications**:
 
 | Permission | Justification |
 | --- | --- |
-| Host access to `https://claude.ai/*` | Reads the user's own conversations, projects and files from their signed-in session so they can be saved to disk. No other site is accessed |
-| `storage` | Stores settings, export history, the backup schedule and, if the user switches it on, a local search index |
+| Host access to `https://claude.ai/*` | Reads the user's own conversations, projects and files from their signed-in session so they can be saved to disk, and moves or deletes chats when the user confirms it. No other site is accessed |
+| `storage` | Stores settings, export history, the backup schedule, the user's folders and, if the user switches it on, a local search index |
 | `tabs` | Reads the address of the current tab to show the conversation or project open there, and opens the extension's own pages for long exports and scheduled backups |
 | `scripting` | Adds the download button to claude.ai tabs that were open before the extension was installed or updated |
 | `sidePanel` | Opens the extension's panel as a side panel |

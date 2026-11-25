@@ -58,6 +58,14 @@
         return reply(sendResponse, apiGetBlob(request.path).then(blobToDataUrl).then((dataUrl) => ({ dataUrl })));
       case 'getConversation':
         return reply(sendResponse, getConversation(request.orgId, request.conversationId).then((conversation) => ({ conversation })));
+      case 'getUsage':
+        return reply(sendResponse, getUsage(request.orgId).then((usage) => ({ usage })));
+
+      // The two calls that change the account; the panel asks the user first
+      case 'deleteConversation':
+        return reply(sendResponse, deleteConversation(request.orgId, request.conversationId).then(() => ({})));
+      case 'moveConversations':
+        return reply(sendResponse, moveConversationsToProject(request.orgId, request.conversationIds, request.projectId).then((method) => ({ method })));
 
       default:
         return false;

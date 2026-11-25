@@ -10,6 +10,9 @@ const {
   summarizeProjectManifests,
   describeProjectExport,
   projectZipFilename,
+  rankKnowledgeBySize,
+  filesNeedingRecovery,
+  buildRecoveryPrompt,
 } = projects;
 const { splitExtension, isBinaryFilename, sha256Hex, fidelityFilename, fetchFileItem, listConversationAttachments } = files;
 const knowledgeFilename = fidelityFilename;
@@ -397,5 +400,65 @@ describe('summary line', () => {
     const when = new Date(2026, 10, 24, 9, 5, 7);
     expect(projectZipFilename([{ name: 'Alpha: v2' }], when)).toBe('Alpha_ v2.zip');
     expect(projectZipFilename([{ name: 'A' }, { name: 'B' }], when)).toBe('downloadmythings-projects-20261124-090507.zip');
+  });
+});
+
+describe('rankKnowledgeBySize', () => {
+  it('ranks files by estimated tokens and gives each its share', () => {
+    const ranked = rankKnowledgeBySize([
+      { name: 'small.md', text: 'x'.repeat(400) },
+      { name: 'big.md', text: 'x'.repeat(3600) },
+      { name: 'scan.pdf', text: null, file: { file_uuid: 'f-1' } },
+    ]);
+    expect(ranked.rows.map((row) => [row.name, row.tokens, row.share])).toEqual([
+      ['big.md', 900, 90],
+      ['small.md', 100, 10],
+      ['scan.pdf', null, null],
+    ]);
+    expect(ranked).toMatchObject({ totalTokens: 1000, unknown: 1 });
+  });
+
+  it('copes with an empty project', () => {
+    expect(rankKnowledgeBySize([])).toEqual({ rows: [], totalTokens: 0, unknown: 0 });
+  });
+});
+
+describe('recovery prompt', () => {
+  const manifests = [{
+    knowledge: [
+      { name: 'brief.md', path: 'files/brief.md', fidelity: 'original' },
+      { name: 'notes.docx', path: 'files/notes.docx.txt', fidelity: 'extracted-text' },
+      { name: 'diagram.png', path: 'files/diagram.webp', fidelity: 'preview' },
+      { name: 'lost.xlsx', path: null, fidelity: 'missing' },
+    ],
+  }];
+
+  it('lists every file that was not saved as the original', () => {
+    expect(filesNeedingRecovery(manifests)).toEqual(['notes.docx', 'diagram.png', 'lost.xlsx']);
+    expect(filesNeedingRecovery([{ knowledge: [{ name: 'a.md', fidelity: 'original' }] }])).toEqual([]);
+  });
+
+  it('asks Claude for unchanged copies, by name, and not to recreate them', () => {
+    const prompt = buildRecoveryPrompt(['notes.docx', 'lost.xlsx']);
+    expect(prompt).toContain('- notes.docx\n- lost.xlsx');
+    expect(prompt).toContain('/mnt/project/');
+    expect(prompt).toContain('do not recreate it from memory');
+  });
+});
+
+describe('collectProject with chosen files', () => {
+  it('saves only the knowledge files that were named', async () => {
+    stubClaude({
+      '/api/organizations/org-1/projects/p-1/docs': json([
+        { file_name: 'keep.md', content: '# Keep' },
+        { file_name: 'skip.md', content: '# Skip' },
+      ]),
+      '/api/organizations/org-1/projects/p-1/files': json([]),
+    });
+    const result = await collectProject(ORG, { uuid: 'p-1', name: 'Alpha' }, [], {
+      includeInstructions: false, includeProjectChats: false, knowledgeNames: ['keep.md'],
+    }, '');
+    expect(result.entries.map((entry) => entry.path)).toEqual(['files/keep.md', 'manifest.json']);
+    expect(result.manifest.knowledge.map((record) => record.name)).toEqual(['keep.md']);
   });
 });

@@ -1,6 +1,6 @@
 # DownloadMyThings
 
-A free, open source browser extension for Chrome and Firefox that downloads your own projects, chats and files from claude.ai. Everything runs in your browser. There are no limits, no account and no server.
+A free, open source browser extension for Chrome and Firefox that downloads your own projects, chats and files from claude.ai and helps you keep them in order. Everything runs in your browser. There are no limits, no account and no server.
 
 DownloadMyThings is an independent project. It is not affiliated with or endorsed by Anthropic.
 
@@ -14,6 +14,11 @@ DownloadMyThings is an independent project. It is not affiliated with or endorse
 - **Backups**: everything or the projects you choose, on demand or automatically every day or week
 - **Library**: every chat in the account with its project and date, with select and export
 - **Search inside messages**: the Library can search what was said in every chat, from a private index kept on your computer, with no cap on results
+- **Folders**: group chats and projects your own way, as many folders as you like. They are kept on your computer and change nothing on claude.ai
+- **Move and delete in bulk**: tick chats in the Library and move them into a project or delete them from claude.ai, any number at once. Each asks first and states the count; delete offers to save a copy first
+- **Your Claude limits**: the current session and the week as claude.ai reports them, and an estimate of how much of the context window the open chat fills
+- **What is filling this project**: a project's files ranked by size with each one's share, and a backup of the ones you tick
+- **A prompt for originals**: when claude.ai will not serve a file in its original format, a ready prompt asks Claude to hand it over from inside the project
 - **Hand-off layouts**: a project as a Claude Code folder (`CLAUDE.md`, `docs/`, `chats/`) with a ready prompt, and Markdown chats with front matter for Obsidian
 - **Files and Chats explorer** for a project, with a download button on each row
 - **Works from any tab**: the panel shows the conversation or project open in the current tab, and lets you pick one when there is none
@@ -25,6 +30,7 @@ DownloadMyThings is an independent project. It is not affiliated with or endorse
 
 - Your conversations are read from your own signed-in claude.ai session and saved straight to your Downloads folder.
 - The only site the extension contacts is `claude.ai`. There is no analytics, no licence server and no install ID.
+- It changes your account only when you ask it to: moving chats into a project and deleting chats, each after a confirmation that states how many chats are affected. Everything else only reads.
 - Its site access is limited to `claude.ai`. No page of the extension is exposed to other websites.
 - The source is public under the MIT licence, and release ZIPs are built reproducibly from a tagged commit, so a build can be checked against the code.
 
@@ -66,6 +72,10 @@ Firefox does not use a single "Developer mode" toggle switch for extensions. Ins
    - **Export everything** saves the whole account.
    - **Move to Claude Code** saves the project laid out for Claude Code and shows a prompt to paste there.
 4. On the **Library** tab, search your chats, tick some, and export them. **Search inside messages too** switches on full-text search; the first time, it reads every chat once to build its index.
+
+Tick chats in the Library and a menu appears under the list: **Put in a folder**, **Move to a project on claude.ai**, or **Delete from claude.ai**. Folders are yours alone: the **Folders** button adds, renames and removes them, the list above the chats shows one folder at a time, and a project is filed from its card on the Export tab. Moving and deleting change your account, so each shows what it is about to do and waits for you to confirm. Delete saves a ZIP of the chats first unless you untick that, and deletes nothing if the copy could not be completed. Afterwards the panel reads the list back from claude.ai and reports what actually changed.
+
+The Export tab also shows **Your Claude limits** and, for the conversation open in the tab, an estimate of its size against a 200k context window. Under the project's Files and Chats, **What is filling this project** ranks its files by size; tick some and **Back up ticked files** saves just those.
 
 A running export shows a **Stop** button. Stopping ends the requests in flight as well as the ones not yet started.
 
@@ -113,6 +123,8 @@ manifest.json           what was saved, from where, how faithful, with hashes
 ```
 src/                 the extension, one copy for every browser
   panel.html/js      the main interface: toolbar popup, side panel and tab in one page
+  panel-library.js   the Library tab: search, folders, and actions on ticked chats
+  panel-insights.js  limits, sizes, and the prompt for originals
   background.js      content-script injection, the side panel or popup choice, the backup alarm
   browse.html/js     the full table view
   print.html/js      the print view behind PDF export
@@ -124,6 +136,9 @@ src/                 the extension, one copy for every browser
   lib/projects.js    project export
   lib/account.js     export everything
   lib/sync.js        sync to a folder
+  lib/usage.js       usage limits and the size estimate for a chat
+  lib/folders.js     the user's own folders
+  lib/manage.js      moving and deleting chats, checked against a fresh list
   lib/search.js      the index behind search inside messages
   lib/store.js       extension storage helpers
   lib/utils.js       Markdown and text conversion, artifacts, model names, backup, diagnostics
@@ -152,7 +167,11 @@ The extension relies on claude.ai's internal web API, which is undocumented and 
 - Binary files Claude generated in its sandbox are not exported yet. Text files it created are, as artifacts.
 - Memory is included in Export everything only when claude.ai returns it. Styles are not exported yet.
 - ZIP exports are built in memory. Every export starts a new ZIP file each time it passes 256 MB, so a very large project or account arrives as several parts that unzip into the same folders. Sync to a folder writes file by file and has no such limit.
-- Sync to a folder needs Chrome or Edge. The folder picker and scheduled backups have been tested with stand-ins, not yet on a real account.
+- Sync to a folder needs Chrome or Edge.
+- Moving chats into a project relies on a call that could not be confirmed against a real account when it was written. The panel checks the result and says so if claude.ai moved nothing.
+- The limits come from an undocumented call and are shown as claude.ai reports them. The size of a chat is an estimate from its text; project files, instructions and images are not counted, and some models have a larger window than 200k.
+- Folders live in the extension on one computer. They do not appear in claude.ai's own sidebar and are not shared between browsers.
+- Claude Code sessions and Cowork tasks are not exported.
 - Automatic backups need the browser to be open.
 - The interface is in English only.
 - Markdown and plain text exports contain only the currently selected branch.

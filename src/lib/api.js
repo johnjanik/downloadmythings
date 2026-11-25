@@ -106,6 +106,38 @@ async function apiGetBlob(pathOrUrl) {
   return blob;
 }
 
+// A call that changes something (DELETE, PUT, POST). Resolves with the parsed
+// answer, or null when claude.ai sends none.
+async function apiSend(method, path, body) {
+  const headers = { Accept: 'application/json' };
+  if (body !== undefined) headers['Content-Type'] = 'application/json';
+  let response;
+  try {
+    response = await fetchWithRetry(`${DMT_CLAUDE_ORIGIN}${path}`, {
+      method,
+      credentials: 'include',
+      headers,
+      body: body === undefined ? undefined : JSON.stringify(body)
+    });
+  } catch (cause) {
+    if (cause.cancelled || cause.name === 'AbortError') throw cancelledError();
+    const error = new Error(`Could not reach claude.ai (${cause.message})`);
+    error.status = 0;
+    throw error;
+  }
+  if (!response.ok) {
+    const error = new Error(`claude.ai returned HTTP ${response.status}`);
+    error.status = response.status;
+    throw error;
+  }
+  const text = await response.text();
+  try {
+    return text ? JSON.parse(text) : null;
+  } catch (cause) {
+    return null;
+  }
+}
+
 // Blobs cannot cross the messaging channel, so the relay carries them as data URLs.
 function blobToDataUrl(blob) {
   return new Promise((resolve, reject) => {
@@ -334,10 +366,70 @@ async function getConversation(orgId, conversationId) {
   );
 }
 
+// The account's usage against its limits: { five_hour: { utilization, resets_at }, seven_day: {...}, ... }
+async function getUsage(orgId) {
+  return directOrRelay(
+    () => apiGet(`/api/organizations/${orgId}/usage`),
+    'getUsage',
+    { orgId },
+    (response) => response.usage
+  );
+}
+
+// --- Calls that change the account ------------------------------------------
+// Everything above only reads. These two write, and only when the user has
+// confirmed the action in the panel (see lib/manage.js).
+
+// Deletes one conversation for good. A conversation that is already gone counts as done.
+async function deleteConversation(orgId, conversationId) {
+  return directOrRelay(
+    async () => {
+      try {
+        await apiSend('DELETE', `${conversationsPath(orgId)}/${conversationId}`);
+      } catch (error) {
+        if (error.status !== 404) throw error;
+      }
+      return true;
+    },
+    'deleteConversation',
+    { orgId, conversationId },
+    () => true
+  );
+}
+
+// Moves conversations into a project. claude.ai's move call is undocumented
+// and has two known shapes, so this tries the batch call first and, if
+// claude.ai does not know it, sets the project on each conversation instead.
+// Resolves with the shape that was accepted: 'batch' or 'single'. The caller
+// must check the result against a fresh list; an accepted call is not proof.
+async function moveConversationsToProject(orgId, conversationIds, projectId) {
+  return directOrRelay(
+    async () => {
+      try {
+        await apiSend('POST', `${conversationsPath(orgId)}/move_many`, { conversation_uuids: conversationIds, project_uuid: projectId });
+        return 'batch';
+      } catch (error) {
+        if (error.status !== 404 && error.status !== 405) throw error;
+      }
+      for (const conversationId of conversationIds) {
+        await apiSend('PUT', `${conversationsPath(orgId)}/${conversationId}`, { project_uuid: projectId });
+      }
+      return 'single';
+    },
+    'moveConversations',
+    { orgId, conversationIds, projectId },
+    (response) => response.method
+  );
+}
+
 // Node (vitest) only; in the browser these are plain globals.
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     dmtRetry,
+    apiSend,
+    getUsage,
+    deleteConversation,
+    moveConversationsToProject,
     setRequestSignal,
     fetchWithRetry,
     apiGet,
