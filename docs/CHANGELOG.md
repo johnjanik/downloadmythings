@@ -1,10 +1,25 @@
 # Changelog
 
-## Unreleased
+## [0.4.0] - 2026-11-25
+
+### Added
+
+- **Folders** for chats and projects, without a limit. Tick chats in the Library and put them in a folder, show one folder at a time, and file a project from its card; the project picker then groups projects by folder. Folders are kept in the extension and change nothing on claude.ai.
+- **Move to a project** and **Delete from claude.ai** for any number of ticked chats. Each asks first and states the count. Delete offers to save a ZIP copy first and deletes nothing if that copy is incomplete. Both read the list back from claude.ai afterwards and report what actually changed.
+- **Your Claude limits**: the session and weekly windows as claude.ai reports them, with the time each resets.
+- **Chat size**: an estimate of how much of a 200k context window the open conversation fills.
+- **What is filling this project**: the project's files ranked by estimated tokens with each one's share, and **Back up ticked files**.
+- **A prompt for originals**: after a project export, files that could not be saved in their original format are listed in a ready prompt that asks Claude to hand them over as a ZIP.
 
 ### Changed
 
 - A single very large project is written as several ZIP parts, a new one every 256 MB, like Export everything. It is no longer held in memory whole.
+- A job handed from the popup to a tab expires after two minutes, so one that never started cannot begin by surprise later.
+
+### Notes
+
+- Moving and deleting are the first actions that change the account. Everything else still only reads.
+- The move call is undocumented and was not confirmed against a real account. If claude.ai does not accept it, the panel says so and nothing is changed.
 
 ## [0.3.0] - 2026-11-24
 
