@@ -151,7 +151,7 @@ The extension relies on claude.ai's internal web API, which is undocumented and 
 - Word files usually come back as the text claude.ai extracted, and images sometimes as a preview. The manifest says which.
 - Binary files Claude generated in its sandbox are not exported yet. Text files it created are, as artifacts.
 - Memory is included in Export everything only when claude.ai returns it. Styles are not exported yet.
-- ZIP exports are built in memory. Export everything and multi-project exports start a new ZIP file every 256 MB; a single project is always one ZIP. Sync to a folder writes file by file and has no such limit.
+- ZIP exports are built in memory. Every export starts a new ZIP file each time it passes 256 MB, so a very large project or account arrives as several parts that unzip into the same folders. Sync to a folder writes file by file and has no such limit.
 - Sync to a folder needs Chrome or Edge. The folder picker and scheduled backups have been tested with stand-ins, not yet on a real account.
 - Automatic backups need the browser to be open.
 - The interface is in English only.

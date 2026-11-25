@@ -80,6 +80,11 @@ function mergeProjectKnowledge(docs, files) {
 
 // Everything one project contributes to the ZIP. `root` is the folder prefix
 // ('' or 'Project name/'). Resolves with { entries, manifest, exportedChatIds }.
+// hooks: { onStep(label), isCancelled(), emit(entries) }. With `emit`, entries
+// are handed over as they are gathered (after the instructions, each knowledge
+// file and each batch of chats) so a very large project is never held in
+// memory whole; `entries` in the result then holds only what was not yet
+// handed over, which is at least the manifest.
 async function collectProject(orgId, project, conversations, options, root, hooks) {
   const o = normalizeProjectOptions(options);
   const h = hooks || {};
@@ -87,6 +92,9 @@ async function collectProject(orgId, project, conversations, options, root, hook
   const step = (label) => { if (h.onStep) h.onStep(label); };
 
   const entries = [];
+  const handOver = async () => {
+    if (h.emit && entries.length > 0) await h.emit(entries.splice(0));
+  };
   const exportedChatIds = [];
   const manifest = {
     app: typeof DMT_APP_ID === 'string' ? DMT_APP_ID : 'downloadmythings',
@@ -137,6 +145,7 @@ async function collectProject(orgId, project, conversations, options, root, hook
         sha256: await sha256Hex(instructions)
       };
     }
+    await handOver();
   }
 
   // 2. Knowledge files
@@ -155,6 +164,7 @@ async function collectProject(orgId, project, conversations, options, root, hook
       const { content, record } = await fetchFileItem(orgId, items[i], usedNames, filesFolder);
       if (content !== null) entries.push({ path: `${root}${record.path}`, content });
       manifest.knowledge.push(record);
+      await handOver();
     }
   }
 
@@ -205,6 +215,7 @@ async function collectProject(orgId, project, conversations, options, root, hook
           fail('chat', conv.name || conv.uuid, error);
         }
       }
+      await handOver();
       if (i + DMT_BULK_BATCH_SIZE < chats.length && !isCancelled()) {
         await new Promise((resolve) => setTimeout(resolve, DMT_BULK_BATCH_PAUSE_MS));
       }
@@ -262,9 +273,9 @@ function projectZipFilename(projects, now) {
 }
 
 // Export one or more projects as a ZIP. One project is saved without a
-// top-level folder; several get a folder each. Many large projects are written
-// as several ZIP parts, a new one each time the content passes the part limit,
-// so memory use stays near one part plus one project.
+// top-level folder; several get a folder each. A large export is written as
+// several ZIP parts, a new one each time the content passes the part limit,
+// so memory use stays near one part. The parts unzip into the same folders.
 // hooks: { onProgress({ label, percent }), isCancelled() }
 // Resolves with { cancelled, filename, parts, summary, manifests }. `filename`
 // is the last ZIP written; parts written before a cancel stay on disk.
@@ -293,7 +304,8 @@ async function exportProjectsToZip(orgId, projects, conversations, options, hook
     const root = flat ? '' : `${uniqueFilename(sanitizeFilename(name), '', usedRoots)}/`;
     const result = await collectProject(orgId, project, conversations, options, root, {
       isCancelled,
-      onStep: (label) => report(`${name}: ${label}`, (i / projects.length) * 100)
+      onStep: (label) => report(`${name}: ${label}`, (i / projects.length) * 100),
+      emit: (entries) => writer.add(entries)
     });
     manifests.push(result.manifest);
     exportedChatIds.push(...result.exportedChatIds);

@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- A single very large project is written as several ZIP parts, a new one every 256 MB, like Export everything. It is no longer held in memory whole.
+
 ## [0.3.0] - 2026-11-24
 
 ### Added
