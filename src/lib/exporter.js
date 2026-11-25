@@ -42,7 +42,9 @@ function isNothingToExport(options) {
   return !o.includeChats && !o.extractArtifacts && !o.flattenArtifacts && !o.includeAttachments;
 }
 
-var DMT_NOTHING_TO_EXPORT = 'Nothing to export. Enable "Chats", "Attachments" or one of the artifact file options.';
+function nothingToExportMessage() {
+  return t('Nothing to export. Enable "Chats", "Attachments" or one of the artifact file options.');
+}
 
 // Keep the conversations last updated inside a date range. `from` and `to`
 // are 'YYYY-MM-DD' strings from date inputs (local days, both inclusive);
@@ -107,14 +109,14 @@ function renderConversation(data, conversationId, options) {
 //   { kind: 'empty', error }
 function buildConversationExport(data, conversationId, options, displayName) {
   const o = normalizeExportOptions(options);
-  if (isNothingToExport(o)) return { kind: 'empty', error: DMT_NOTHING_TO_EXPORT };
+  if (isNothingToExport(o)) return { kind: 'empty', error: nothingToExportMessage() };
 
   const safeName = sanitizeFilename(displayName || data.name || conversationId);
   const wantsArtifactFiles = o.extractArtifacts || o.flattenArtifacts;
   const artifactFiles = wantsArtifactFiles ? extractArtifactFiles(data, o.artifactFormat) : [];
 
   if (artifactFiles.length === 0) {
-    if (!o.includeChats) return { kind: 'empty', error: 'No artifacts found in this conversation.' };
+    if (!o.includeChats) return { kind: 'empty', error: t('No artifacts found in this conversation.') };
     const rendered = renderConversation(data, conversationId, o);
     return {
       kind: 'file',
@@ -254,11 +256,11 @@ function createPartWriter(baseName, limitBytes, onZipProgress, isCancelled) {
 
 // Fetch one conversation and download it. Resolves with { filename, artifactCount }.
 async function exportConversationToFile(orgId, conversationId, options, displayName) {
-  if (isNothingToExport(options)) throw new Error(DMT_NOTHING_TO_EXPORT);
+  if (isNothingToExport(options)) throw new Error(nothingToExportMessage());
 
   const data = await getConversation(orgId, conversationId);
   if (!data || !Array.isArray(data.chat_messages)) {
-    throw new Error('Unexpected conversation data from claude.ai. Refresh the page and try again.');
+    throw new Error(t('Unexpected conversation data from claude.ai. Refresh the page and try again.'));
   }
   data.model = inferModel(data);
 
@@ -301,7 +303,7 @@ async function exportConversationToFile(orgId, conversationId, options, displayN
 // hooks: { onProgress({ phase: 'fetch'|'zip', completed, failed, total, percent }), isCancelled() }
 // Resolves with { total, completed, failed, included, failures, cancelled, filename }.
 async function exportConversationsToZip(orgId, conversations, options, hooks) {
-  if (isNothingToExport(options)) throw new Error(DMT_NOTHING_TO_EXPORT);
+  if (isNothingToExport(options)) throw new Error(nothingToExportMessage());
 
   const h = hooks || {};
   const isCancelled = () => Boolean(h.isCancelled && h.isCancelled());
@@ -384,7 +386,7 @@ if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     DMT_BULK_BATCH_SIZE,
     DMT_BULK_BATCH_PAUSE_MS,
-    DMT_NOTHING_TO_EXPORT,
+    nothingToExportMessage,
     fileDateStamp,
     normalizeExportOptions,
     isNothingToExport,

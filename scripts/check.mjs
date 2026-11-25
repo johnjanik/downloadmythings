@@ -11,6 +11,7 @@ import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { TARGETS, buildManifest } from './manifest.mjs';
+import { prepareTranslations } from './i18n.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const srcDir = path.join(root, 'src');
@@ -78,8 +79,18 @@ for (const file of allFiles) {
   }
 }
 
+// 4. Translations: every t() call can be found, and every translation keeps its {markers}
+const translations = await prepareTranslations();
+problems.push(...translations.problems);
+const incomplete = Object.entries(translations.report)
+  .filter(([, result]) => result.missing.length > 0 || result.unused.length > 0)
+  .map(([lang, result]) => `${lang} (${result.missing.length} missing, ${result.unused.length} unused)`);
+
 if (problems.length > 0) {
   console.error(problems.join('\n'));
   process.exit(1);
 }
 console.log(`OK: ${allFiles.length} source files checked for ${TARGETS.join(' and ')}`);
+console.log(`OK: ${translations.total} strings, ${Object.keys(translations.report).length} translations`);
+// Untranslated strings fall back to English; they are worth knowing about but break nothing
+if (incomplete.length > 0) console.log(`Note: translations to bring up to date (npm run i18n -- --verbose): ${incomplete.join(', ')}`);

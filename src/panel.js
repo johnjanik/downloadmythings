@@ -83,11 +83,20 @@ function hideNotice() {
 
 function shortDate(value) {
   const date = new Date(value || '');
-  return Number.isNaN(date.getTime()) ? '' : date.toLocaleDateString();
+  return Number.isNaN(date.getTime()) ? '' : date.toLocaleDateString(dmtLocaleTag());
 }
 
-function plural(count, word) {
-  return `${count} ${word}${count === 1 ? '' : 's'}`;
+// Counted words. Each is one entry in the translation files, with every plural form a language needs.
+function countChats(count) {
+  return tn('{n} chat', '{n} chats', count);
+}
+
+function countFiles(count) {
+  return tn('{n} file', '{n} files', count);
+}
+
+function countProjects(count) {
+  return tn('{n} project', '{n} projects', count);
 }
 
 function projectChats(project) {
@@ -154,23 +163,23 @@ function saveOptions() {
 
 function renderChatCard() {
   $('chatCard').hidden = !state.chat;
-  if (state.chat) $('chatName').textContent = state.chat.name || 'Untitled conversation';
+  if (state.chat) $('chatName').textContent = state.chat.name || t('Untitled conversation');
 }
 
 function renderProjectCard() {
   const picker = $('projectPicker');
-  picker.replaceChildren(new Option(state.projects.length > 0 ? 'Choose a project...' : 'No projects found', ''));
+  picker.replaceChildren(new Option(state.projects.length > 0 ? t('Choose a project...') : t('No projects found'), ''));
   // Projects the user has filed are listed under their folder, the rest below
   const filed = state.projects.some((project) => folderOf(state.folders, 'projects', project.uuid));
   const groups = new Map();
   for (const project of state.projects) {
-    const option = new Option(project.name || 'Untitled Project', project.uuid);
+    const option = new Option(project.name || t('Untitled Project'), project.uuid);
     if (!filed) {
       picker.add(option);
       continue;
     }
     const folder = folderOf(state.folders, 'projects', project.uuid);
-    const label = folder ? folder.name : 'Not in a folder';
+    const label = folder ? folder.name : t('Not in a folder');
     if (!groups.has(label)) {
       const group = document.createElement('optgroup');
       group.label = label;
@@ -181,18 +190,18 @@ function renderProjectCard() {
   const ordered = [...groups.values()].sort((a, b) => a.unfiled - b.unfiled || a.group.label.localeCompare(b.group.label));
   picker.append(...ordered.map((entry) => entry.group));
   if (state.project && !state.projects.some((project) => project.uuid === state.project.uuid)) {
-    picker.add(new Option(state.project.name || 'Open project', state.project.uuid));
+    picker.add(new Option(state.project.name || t('Open project'), state.project.uuid));
   }
   picker.value = state.project ? state.project.uuid : '';
 
-  $('projectName').textContent = state.project ? (state.project.name || 'Untitled Project') : 'No project selected';
+  $('projectName').textContent = state.project ? (state.project.name || t('Untitled Project')) : t('No project selected');
   const counts = $('projectCounts');
   counts.hidden = !state.project;
   if (state.project) {
-    const files = state.knowledge ? plural(state.knowledge.length, 'file') : 'Counting files';
-    counts.textContent = `${files} · ${plural(projectChats(state.project).length, 'chat')}`;
+    const files = state.knowledge ? countFiles(state.knowledge.length) : t('Counting files');
+    counts.textContent = `${files} · ${countChats(projectChats(state.project).length)}`;
   }
-  $('zipName').placeholder = state.project ? (state.project.name || 'Project') : 'Same as the project name';
+  $('zipName').placeholder = state.project ? (state.project.name || 'Project') : t('Same as the project name');
 
   const ready = Boolean(state.project) && Boolean(state.orgId) && !state.job;
   for (const id of ['downloadProject', 'downloadFiles', 'downloadChats', 'moveToClaudeCode']) $(id).disabled = !ready;
@@ -223,7 +232,7 @@ function renderExplorer() {
       : (item.file && item.file.file_kind ? item.file.file_kind : 'file');
     meta.textContent = [size, shortDate(item.createdAt)].filter(Boolean).join(' · ');
     main.append(name, meta);
-    row.append(main, downloadIconButton(`Download ${item.name}`, () => saveKnowledgeFile(item)));
+    row.append(main, downloadIconButton(t('Download {0}', item.name), () => saveKnowledgeFile(item)));
     return row;
   }));
 
@@ -235,12 +244,12 @@ function renderExplorer() {
     main.className = 'main';
     const name = document.createElement('div');
     name.className = 'name';
-    name.textContent = conv.name || 'Untitled conversation';
+    name.textContent = conv.name || t('Untitled conversation');
     const meta = document.createElement('div');
     meta.className = 'meta';
     meta.textContent = shortDate(conv.updated_at);
     main.append(name, meta);
-    row.append(main, downloadIconButton(`Download ${conv.name || 'this chat'}`, () => saveChat(conv.uuid, conv.name)));
+    row.append(main, downloadIconButton(conv.name ? t('Download {0}', conv.name) : t('Download this chat'), () => saveChat(conv.uuid, conv.name)));
     return row;
   }));
 }
@@ -302,7 +311,7 @@ async function loadAccount() {
     state.orgId = await getStoredOrgId();
   }
   if (!state.orgId) {
-    showNotice('Sign in to claude.ai in this browser, then press the refresh button.');
+    showNotice(t('Sign in to claude.ai in this browser, then press the refresh button.'));
     renderExportTab();
     renderLibrary();
     return;
@@ -318,7 +327,7 @@ async function loadAccount() {
       .sort((a, b) => new Date(b.updated_at || b.created_at || 0) - new Date(a.updated_at || a.created_at || 0));
     state.conversations = conversations;
   } catch (error) {
-    showNotice(`Could not load your account: ${error.message}`);
+    showNotice(t('Could not load your account: {0}', error.message));
   }
 
   await applyContext();
@@ -336,9 +345,9 @@ async function saveChat(uuid, name) {
       return;
     }
     const saved = await exportConversationToFile(state.orgId, uuid, options, name || undefined);
-    showNotice(`Saved ${saved.filename}`, 'info');
+    showNotice(t('Saved {0}', saved.filename), 'info');
   } catch (error) {
-    showNotice(`Could not save the chat: ${error.message}`);
+    showNotice(t('Could not save the chat: {0}', error.message));
   }
 }
 
@@ -347,13 +356,13 @@ async function saveKnowledgeFile(item) {
     const wanted = { ...item, preferText: readOptions().fileFormat === 'markdown' };
     const { content, record } = await fetchFileItem(state.orgId, wanted, new Set(), '');
     if (content === null) {
-      showNotice(`claude.ai did not return ${item.name}. ${record.note || ''}`);
+      showNotice(t('claude.ai did not return {0}. {1}', item.name, record.note || ''));
       return;
     }
     downloadFile(content, record.path, typeof content === 'string' ? 'text/plain' : (record.mediaType || 'application/octet-stream'));
-    showNotice(record.fidelity === 'original' ? `Saved ${record.path}` : `Saved ${record.path} (${record.fidelity})`, 'info');
+    showNotice(record.fidelity === 'original' ? t('Saved {0}', record.path) : t('Saved {0} ({1})', record.path, record.fidelity), 'info');
   } catch (error) {
-    showNotice(`Could not save ${item.name}: ${error.message}`);
+    showNotice(t('Could not save {0}: {1}', item.name, error.message));
   }
 }
 
@@ -379,7 +388,7 @@ function projectJob(part) {
 
 // After "Move to Claude Code": the prompt to paste into Claude Code
 function showHandoff(filename) {
-  $('handoffFile').textContent = filename;
+  $('handoffText').textContent = t('Unzip {0} into an empty folder, start Claude Code there, and paste this prompt.', filename);
   $('handoffPrompt').value = DMT_CLAUDE_CODE_PROMPT;
   $('handoffCard').hidden = false;
 }
@@ -392,7 +401,7 @@ function setProgress(label, percent) {
 // "Alpha.zip", or "3 ZIP files (backup-part1.zip to backup-part3.zip)" for a large export
 function savedZipNames(result) {
   const parts = result.parts || [];
-  return parts.length > 1 ? `${parts.length} ZIP files (${parts[0]} to ${parts[parts.length - 1]})` : result.filename;
+  return parts.length > 1 ? t('{0} ZIP files ({1} to {2})', parts.length, parts[0], parts[parts.length - 1]) : result.filename;
 }
 
 async function runJob(job) {
@@ -403,7 +412,7 @@ async function runJob(job) {
   $('recoveryCard').hidden = true;
   hideNotice();
   $('progressCard').hidden = false;
-  setProgress('Preparing export...', 0);
+  setProgress(t('Preparing export...'), 0);
   renderProjectCard();
 
   const hooks = {
@@ -416,14 +425,14 @@ async function runJob(job) {
   try {
     let message = null;
     let problem = false; // show the message as a warning, not as good news
-    let cancelledMessage = 'Export cancelled. ZIP files already saved stay on disk.';
+    let cancelledMessage = t('Export cancelled. ZIP files already saved stay on disk.');
 
     if (job.type === 'project') {
       const project = state.projects.find((item) => item.uuid === job.projectId)
         || await getProject(state.orgId, job.projectId);
       const result = await exportProjectsToZip(state.orgId, [project], inRange, options, hooks);
       if (!result.cancelled) {
-        message = `Saved ${savedZipNames(result)}. ${describeProjectExport(result.summary)}`;
+        message = t('Saved {0}. {1}', savedZipNames(result), describeProjectExport(result.summary));
         if (options.layout === 'claude-code') showHandoff(result.filename);
         else showRecovery(filesNeedingRecovery(result.manifests));
       }
@@ -437,27 +446,27 @@ async function runJob(job) {
         knowledgeNames: job.names, zipFilename: `${base}_selected-files`
       }, hooks);
       if (!result.cancelled) {
-        message = `Saved ${savedZipNames(result)}. ${describeProjectExport(result.summary)}`;
+        message = t('Saved {0}. {1}', savedZipNames(result), describeProjectExport(result.summary));
         showRecovery(filesNeedingRecovery(result.manifests));
       }
     } else if (job.type === 'move') {
       const project = state.projects.find((item) => item.uuid === job.projectId);
-      if (!project) throw new Error('That project no longer exists.');
-      const name = project.name || 'Untitled Project';
+      if (!project) throw new Error(t('That project no longer exists.'));
+      const name = project.name || t('Untitled Project');
       const result = await moveChatsToProject(state.orgId, job.ids, job.projectId, {
         isCancelled: hooks.isCancelled,
-        onProgress: (done, total) => setProgress(`Moving ${done} of ${total} chats`, (done / total) * 100)
+        onProgress: (done, total) => setProgress(t('Moving {0} of {1} chats', done, total), (done / total) * 100)
       });
       state.conversations = result.conversations;
-      cancelledMessage = `Stopped. ${result.moved} of ${plural(result.requested, 'chat')} had been moved to "${name}".`;
+      cancelledMessage = tn('Stopped. {0} of {n} chat had been moved to "{1}".', 'Stopped. {0} of {n} chats had been moved to "{1}".', result.requested, result.moved, name);
       if (!result.cancelled) {
         if (result.moved === result.requested) {
-          message = `Moved ${plural(result.moved, 'chat')} to "${name}".`;
+          message = tn('Moved {n} chat to "{0}".', 'Moved {n} chats to "{0}".', result.moved, name);
         } else {
           problem = true;
           message = result.moved === 0
-            ? `claude.ai accepted the request but moved nothing. The chats are where they were.`
-            : `Moved ${result.moved} of ${plural(result.requested, 'chat')} to "${name}". claude.ai left the others where they were.`;
+            ? t('claude.ai accepted the request but moved nothing. The chats are where they were.')
+            : tn('Moved {0} of {n} chat to "{1}". claude.ai left the others where they were.', 'Moved {0} of {n} chats to "{1}". claude.ai left the others where they were.', result.requested, result.moved, name);
         }
       }
     } else if (job.type === 'delete') {
@@ -465,62 +474,65 @@ async function runJob(job) {
       const picked = state.conversations.filter((conv) => wanted.has(conv.uuid));
       let copied = '';
       let stoppedEarly = false;
-      cancelledMessage = 'Stopped. Nothing was deleted.';
+      cancelledMessage = t('Stopped. Nothing was deleted.');
       if (job.copyFirst) {
         // The copy must be complete before anything is deleted
         const copyOptions = { ...options, format: options.format === 'pdf' ? 'markdown' : options.format };
         const copy = await exportConversationsToZip(state.orgId, picked, copyOptions, {
           isCancelled: hooks.isCancelled,
           onProgress: (progress) => {
-            if (progress.phase === 'zip') setProgress('Saving the copy...', progress.percent);
-            else setProgress(`Saving a copy first: ${progress.completed + progress.failed} of ${progress.total} chats`, ((progress.completed + progress.failed) / progress.total) * 100);
+            if (progress.phase === 'zip') setProgress(t('Saving the copy...'), progress.percent);
+            else setProgress(t('Saving a copy first: {0} of {1} chats', progress.completed + progress.failed, progress.total), ((progress.completed + progress.failed) / progress.total) * 100);
           }
         });
         if (copy.cancelled) stoppedEarly = true;
-        else if (copy.failed > 0) throw new Error(`${copy.failed} of ${plural(picked.length, 'chat')} could not be saved, so nothing was deleted.`);
-        else if (copy.included < picked.length) throw new Error('The copy would not hold every chat with the current export settings, so nothing was deleted.');
-        else copied = ` A copy is in ${copy.filename}.`;
+        else if (copy.failed > 0) throw new Error(tn('{0} of {n} chat could not be saved, so nothing was deleted.', '{0} of {n} chats could not be saved, so nothing was deleted.', picked.length, copy.failed));
+        else if (copy.included < picked.length) throw new Error(t('The copy would not hold every chat with the current export settings, so nothing was deleted.'));
+        else copied = t('A copy is in {0}.', copy.filename);
       }
       if (!stoppedEarly) {
         const result = await deleteChats(state.orgId, picked.map((conv) => conv.uuid), {
           isCancelled: hooks.isCancelled,
-          onProgress: (done, total) => setProgress(`Deleting ${done} of ${total} chats`, (done / total) * 100)
+          onProgress: (done, total) => setProgress(t('Deleting {0} of {1} chats', done, total), (done / total) * 100)
         });
         state.conversations = result.conversations;
         forgetDeletedChats(job.ids); // panel-library.js
-        cancelledMessage = `Stopped. ${result.deleted} of ${plural(result.requested, 'chat')} had been deleted.${copied}`;
+        const sentences = (...parts) => parts.filter(Boolean).join(' ');
+        cancelledMessage = sentences(tn('Stopped. {0} of {n} chat had been deleted.', 'Stopped. {0} of {n} chats had been deleted.', result.requested, result.deleted), copied);
         if (!result.cancelled) {
           problem = result.deleted < result.requested;
-          message = problem
-            ? `Deleted ${result.deleted} of ${plural(result.requested, 'chat')}. ${result.firstError ? `First problem: ${result.firstError}.` : 'claude.ai still lists the others.'}${copied}`
-            : `Deleted ${plural(result.deleted, 'chat')} from claude.ai.${copied}`;
+          const outcome = problem
+            ? tn('Deleted {0} of {n} chat.', 'Deleted {0} of {n} chats.', result.requested, result.deleted)
+            : tn('Deleted {n} chat from claude.ai.', 'Deleted {n} chats from claude.ai.', result.deleted);
+          const detail = problem && (result.firstError ? t('First problem: {0}.', result.firstError) : t('claude.ai still lists the others.'));
+          message = sentences(outcome, detail, copied);
         }
       }
     } else if (job.type === 'backup-projects') {
       const wanted = new Set(job.projectIds);
       const chosen = state.projects.filter((project) => wanted.has(project.uuid));
-      if (chosen.length === 0) throw new Error('None of the chosen projects exist any more. Pick the projects to back up again.');
+      if (chosen.length === 0) throw new Error(t('None of the chosen projects exist any more. Pick the projects to back up again.'));
       const backupOptions = {
         ...options,
         includeInstructions: true, includeKnowledge: true, includeProjectChats: true,
         projectFolders: true, zipFilename: `downloadmythings-backup-${fileDateStamp()}`
       };
       const result = await exportProjectsToZip(state.orgId, chosen, inRange, backupOptions, hooks);
-      if (!result.cancelled) message = `Saved ${savedZipNames(result)}. ${describeProjectExport(result.summary)}`;
+      if (!result.cancelled) message = t('Saved {0}. {1}', savedZipNames(result), describeProjectExport(result.summary));
     } else if (job.type === 'everything') {
       const everythingOptions = { ...options, format: options.format === 'pdf' ? 'markdown' : options.format };
       const result = await exportEverything(state.orgId, state.projects, inRange, everythingOptions, hooks);
-      if (!result.cancelled) message = `Saved ${describeAccountExport(result.counts, result.parts.length)}`;
+      if (!result.cancelled) message = t('Saved {0}', describeAccountExport(result.counts, result.parts.length));
     } else if (job.type === 'sync') {
       const syncOptions = { ...options, format: options.format === 'pdf' ? 'markdown' : options.format };
       const result = await syncAccountToFolder(state.orgId, state.syncFolder, state.projects, inRange, syncOptions, hooks);
       const summary = describeSync(result.counts);
       await storageSet('local', { lastSync: { at: new Date().toISOString(), folder: state.syncFolder.name, summary, cancelled: result.cancelled } });
       if (result.failures.length > 0) console.warn('Folder sync problems:', result.failures);
-      cancelledMessage = `Sync stopped (${summary}). What was written stays in the folder, and the next run carries on from there.`;
+      cancelledMessage = t('Sync stopped ({0}). What was written stays in the folder, and the next run carries on from there.', summary);
       if (!result.cancelled) {
-        message = `Synced to "${state.syncFolder.name}": ${summary}.`;
-        if (result.failures.length > 0) message += ` First problem: ${result.failures[0].name}: ${result.failures[0].message}`;
+        message = t('Synced to "{0}": {1}.', state.syncFolder.name, summary);
+        if (result.failures.length > 0) message += ` ${t('First problem: {0}: {1}', result.failures[0].name, result.failures[0].message)}`;
       }
     } else if (job.type === 'chats') {
       const wanted = new Set(job.ids);
@@ -528,23 +540,25 @@ async function runJob(job) {
       const result = await exportConversationsToZip(state.orgId, picked, options, {
         isCancelled: hooks.isCancelled,
         onProgress: (progress) => {
-          if (progress.phase === 'zip') setProgress('Creating ZIP file...', progress.percent);
-          else setProgress(`${progress.completed + progress.failed} of ${progress.total} chats`, ((progress.completed + progress.failed) / progress.total) * 100);
+          if (progress.phase === 'zip') setProgress(t('Creating ZIP file...'), progress.percent);
+          else setProgress(tn('{0} of {n} chat', '{0} of {n} chats', progress.total, progress.completed + progress.failed), ((progress.completed + progress.failed) / progress.total) * 100);
         }
       });
       if (!result.cancelled) {
         message = result.included === 0
-          ? 'Nothing was saved: no chat had anything to export with these settings.'
-          : `Saved ${result.filename}: ${plural(result.completed, 'chat')}${result.failed > 0 ? `, ${result.failed} failed` : ''}`;
+          ? t('Nothing was saved: no chat had anything to export with these settings.')
+          : (result.failed > 0
+            ? tn('Saved {0}: {n} chat, {1} failed', 'Saved {0}: {n} chats, {1} failed', result.completed, result.filename, result.failed)
+            : tn('Saved {0}: {n} chat', 'Saved {0}: {n} chats', result.completed, result.filename));
       }
     }
 
     if (message) showNotice(message, problem ? undefined : 'info');
     else showNotice(cancelledMessage, 'info');
-    if (job.backup) await recordBackupRun(message || 'Stopped before it finished');
+    if (job.backup) await recordBackupRun(message || t('Stopped before it finished'));
   } catch (error) {
     console.error('Export failed:', error);
-    showNotice(`Export failed: ${error.message}`);
+    showNotice(t('Export failed: {0}', error.message));
     if (job.backup) await recordBackupRun(`Failed: ${error.message}`);
   } finally {
     setRequestSignal(null);
@@ -596,14 +610,15 @@ async function renderSyncCard() {
   const name = $('syncFolderName');
   name.hidden = !state.syncFolder;
   if (state.syncFolder) name.textContent = `Folder: ${state.syncFolder.name}`;
-  $('chooseSyncFolder').textContent = state.syncFolder ? 'Change folder...' : 'Choose folder...';
+  $('chooseSyncFolder').textContent = state.syncFolder ? t('Change folder...') : t('Choose folder...');
   $('syncNow').disabled = !state.syncFolder || !state.orgId || Boolean(state.job);
 
   const stored = await storageGet('local', ['lastSync']);
   const last = stored.lastSync;
-  $('syncLast').textContent = last
-    ? `Last sync ${new Date(last.at).toLocaleString()} to "${last.folder}": ${last.summary}${last.cancelled ? ' (stopped early)' : ''}`
-    : '';
+  const when = last ? new Date(last.at).toLocaleString(dmtLocaleTag()) : '';
+  $('syncLast').textContent = !last ? '' : (last.cancelled
+    ? t('Last sync {0} to "{1}": {2} (stopped early)', when, last.folder, last.summary)
+    : t('Last sync {0} to "{1}": {2}', when, last.folder, last.summary));
 }
 
 async function setUpSync() {
@@ -628,7 +643,7 @@ async function setUpSync() {
       state.syncFolder = handle;
       renderSyncCard();
     } catch (error) {
-      if (error.name !== 'AbortError') showNotice(`Could not open that folder: ${error.message}`);
+      if (error.name !== 'AbortError') showNotice(t('Could not open that folder: {0}', error.message));
     }
   });
 
@@ -638,7 +653,7 @@ async function setUpSync() {
     let permission = await state.syncFolder.queryPermission(access);
     if (permission !== 'granted') permission = await state.syncFolder.requestPermission(access);
     if (permission !== 'granted') {
-      showNotice('The browser did not allow writing to that folder. Choose the folder again.');
+      showNotice(t('The browser did not allow writing to that folder. Choose the folder again.'));
       return;
     }
     runJob({ type: 'sync', options: readOptions() });
@@ -689,7 +704,7 @@ async function renderBackupCard() {
       await saveBackupSettings({ projectIds: [...current] });
       renderBackupCard();
     });
-    label.append(box, document.createTextNode(project.name || 'Untitled Project'));
+    label.append(box, document.createTextNode(project.name || t('Untitled Project')));
     row.appendChild(label);
     return row;
   }));
@@ -701,7 +716,7 @@ async function renderBackupCard() {
   const nothingChosen = backup.scope === 'projects' && backup.projectIds.length === 0;
   $('backupNow').disabled = !state.orgId || Boolean(state.job) || nothingChosen;
   $('backupLast').textContent = backup.lastRunAt
-    ? `Last backup ${new Date(backup.lastRunAt).toLocaleString()}: ${backup.lastResult}`
+    ? t('Last backup {0}: {1}', new Date(backup.lastRunAt).toLocaleString(dmtLocaleTag()), backup.lastResult)
     : '';
 }
 
@@ -738,7 +753,12 @@ function setUpBackups() {
   $('backupMethod').addEventListener('change', (event) => saveBackupSettings({ method: event.target.value }));
   $('backupSchedule').addEventListener('change', async (event) => {
     await saveBackupSettings({ schedule: event.target.value });
-    showNotice(event.target.value === 'off' ? 'Automatic backups are off.' : `Automatic backups are on: ${event.target.value}, while the browser is open.`, 'info');
+    const said = {
+      off: t('Automatic backups are off.'),
+      daily: t('Automatic backups are on: daily, while the browser is open.'),
+      weekly: t('Automatic backups are on: weekly, while the browser is open.')
+    };
+    showNotice(said[event.target.value] || said.off, 'info');
   });
   $('backupNow').addEventListener('click', () => {
     if (state.viewMode === 'popup') {
@@ -754,7 +774,7 @@ function setUpBackups() {
 // A scheduled run: this tab was opened by the background script's alarm
 async function runScheduledBackup() {
   if (!state.orgId) {
-    await recordBackupRun('Skipped: not signed in to claude.ai');
+    await recordBackupRun(t('Skipped: not signed in to claude.ai'));
   } else {
     await runBackup(true);
   }
@@ -793,10 +813,10 @@ async function setUpDisplayMode() {
         }
         window.close();
       } catch (error) {
-        showNotice('The toolbar button now opens the side panel.', 'info');
+        showNotice(t('The toolbar button now opens the side panel.'), 'info');
       }
     } else {
-      showNotice(mode === 'popup' ? 'The toolbar button now opens a popup.' : 'The toolbar button now opens the side panel.', 'info');
+      showNotice(mode === 'popup' ? t('The toolbar button now opens a popup.') : t('The toolbar button now opens the side panel.'), 'info');
     }
   });
 }
@@ -840,7 +860,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   $('copyHandoff').addEventListener('click', async () => {
     try {
       await navigator.clipboard.writeText($('handoffPrompt').value);
-      $('copyHandoff').textContent = 'Copied';
+      $('copyHandoff').textContent = t('Copied');
     } catch (error) {
       $('handoffPrompt').select(); // clipboard refused: leave the text selected to copy by hand
     }
@@ -853,7 +873,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       state.job.cancelled = true;
       state.job.controller.abort();
     }
-    setProgress('Cancelling...', 100);
+    setProgress(t('Cancelling...'), 100);
   });
   $('settings').addEventListener('change', saveOptions);
   $('openOptions').addEventListener('click', (event) => {

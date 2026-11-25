@@ -12,6 +12,10 @@ if (typeof module !== 'undefined' && module.exports && typeof storageGet === 'un
   Object.assign(globalThis, require('./store.js'));
 }
 
+if (typeof module !== 'undefined' && module.exports && typeof t === 'undefined') {
+  Object.assign(globalThis, require('./i18n.js'));
+}
+
 var DMT_FOLDERS_KEY = 'folders';
 var DMT_FOLDER_NAME_MAX = 60;
 
@@ -51,7 +55,7 @@ function findFolderByName(data, name) {
 // folder back instead of a second one. Throws on an empty name.
 function addFolder(data, name) {
   const tidy = tidyFolderName(name);
-  if (!tidy) throw new Error('Give the folder a name');
+  if (!tidy) throw new Error(t('Give the folder a name'));
   const existing = findFolderByName(data, tidy);
   if (existing) return { data, folder: existing };
   const taken = new Set(data.folders.map((folder) => folder.id));
@@ -65,9 +69,9 @@ function addFolder(data, name) {
 
 function renameFolder(data, folderId, name) {
   const tidy = tidyFolderName(name);
-  if (!tidy) throw new Error('Give the folder a name');
+  if (!tidy) throw new Error(t('Give the folder a name'));
   const clash = findFolderByName(data, tidy);
-  if (clash && clash.id !== folderId) throw new Error(`There is already a folder called "${clash.name}"`);
+  if (clash && clash.id !== folderId) throw new Error(t('There is already a folder called "{0}"', clash.name));
   return { ...data, folders: data.folders.map((folder) => (folder.id === folderId ? { ...folder, name: tidy } : folder)) };
 }
 
@@ -84,7 +88,7 @@ function removeFolder(data, folderId) {
 // Put chats or projects in a folder. `folderId` null takes them out of theirs.
 function assignToFolder(data, kind, uuids, folderId) {
   if (kind !== 'chats' && kind !== 'projects') throw new Error(`Unknown kind: ${kind}`);
-  if (folderId !== null && !data.folders.some((folder) => folder.id === folderId)) throw new Error('That folder no longer exists');
+  if (folderId !== null && !data.folders.some((folder) => folder.id === folderId)) throw new Error(t('That folder no longer exists'));
   const map = { ...data[kind] };
   for (const uuid of uuids) {
     if (folderId === null) delete map[uuid];

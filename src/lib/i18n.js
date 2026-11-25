@@ -19,16 +19,52 @@
 // Languages with a file in locales/, by their own names. `en` is the source.
 var DMT_LANGUAGES = {
   en: 'English',
+  ar: 'العربية',
+  apc: 'العربية الشامية',
+  az: 'Azərbaycan dili',
+  bg: 'Български',
+  da: 'Dansk',
   de: 'Deutsch',
+  el: 'Ελληνικά',
   es: 'Español',
+  fa: 'فارسی',
+  fi: 'Suomi',
   fr: 'Français',
+  gu: 'ગુજરાતી',
+  he: 'עברית',
   hi: 'हिन्दी',
-  id: 'Bahasa Indonesia',
+  hu: 'Magyar',
+  hy: 'Հայերեն',
   it: 'Italiano',
   ja: '日本語',
+  ka: 'ქართული',
   ko: '한국어',
-  pt_BR: 'Português (Brasil)'
+  lt: 'Lietuvių',
+  lv: 'Latviešu',
+  nb: 'Norsk bokmål',
+  nl: 'Nederlands',
+  pl: 'Polski',
+  pt_BR: 'Português',
+  ru: 'Русский',
+  sa: 'संस्कृतम्',
+  sr: 'Српски',
+  sv: 'Svenska',
+  ta: 'தமிழ்',
+  tr: 'Türkçe',
+  zh_CN: '简体中文',
+  zh_TW: '繁體中文'
 };
+
+// Written right to left
+var DMT_RTL_LANGUAGES = ['ar', 'apc', 'fa', 'he'];
+
+// No browser offers its own interface in these, so the browser never picks
+// them by itself: they are chosen in Options. Their files are kept outside
+// _locales/, where browsers and stores only expect languages they know.
+var DMT_EXTRA_LANGUAGES = ['apc', 'sa'];
+
+// For counting and for dates, these behave like a language the browser knows
+var DMT_LANGUAGE_LIKE = { apc: 'ar' };
 
 var DMT_LANGUAGE_KEY = 'dmtUiLanguage';
 
@@ -73,6 +109,28 @@ function dmtLocale() {
   return dmtLookup('dmtLocale') || 'en';
 }
 
+// The language as the browser's own date and number formatting names it: 'pt-BR', 'ar', ...
+function dmtLocaleTag() {
+  const locale = dmtLocale();
+  return (DMT_LANGUAGE_LIKE[locale] || locale).replace('_', '-');
+}
+
+// Which plural form a count takes in a language: 'one', 'few', 'many', 'other', ...
+function dmtPluralCategory(locale, count) {
+  if (locale === 'sa') return count === 1 ? 'one' : (count === 2 ? 'two' : 'other'); // Sanskrit has a dual
+  try {
+    return new Intl.PluralRules((DMT_LANGUAGE_LIKE[locale] || locale).replace('_', '-')).select(count);
+  } catch (error) {
+    return count === 1 ? 'one' : 'other';
+  }
+}
+
+// Every plural form a language has, for the build to check translations against
+function dmtPluralCategories(locale) {
+  if (locale === 'sa') return ['one', 'two', 'other'];
+  return new Intl.PluralRules((DMT_LANGUAGE_LIKE[locale] || locale).replace('_', '-')).resolvedOptions().pluralCategories;
+}
+
 function dmtFill(template, values) {
   return template.replace(/\{(\d+)\}/g, (marker, index) => (Number(index) < values.length ? String(values[Number(index)]) : marker));
 }
@@ -83,15 +141,15 @@ function t(text, ...values) {
 
 // A counted string. `{n}` is the count; further values fill {0}, {1}, ...
 function tn(one, other, count, ...values) {
-  let category = count === 1 ? 'one' : 'other';
-  try {
-    category = new Intl.PluralRules(dmtLocale().replace('_', '-')).select(count);
-  } catch (error) {
-    // an unknown language tag: keep the English rule
-  }
+  const category = dmtPluralCategory(dmtLocale(), count);
   const key = dmtPluralKey(one, other);
   const template = dmtLookup(`${key}_${category}`) || dmtLookup(`${key}_other`) || (count === 1 ? one : other);
   return dmtFill(template.replace(/\{n\}/g, String(count)), values);
+}
+
+// For text placed into markup: a translation must never be able to add tags
+function dmtEscape(text) {
+  return String(text).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 }
 
 // Use these messages from now on (null = follow the browser again)
@@ -107,7 +165,10 @@ function dmtIsExtensionPage() {
 // looked up by its English text; anything inside translate="no" is left alone.
 function dmtTranslatePage(root) {
   const locale = dmtLocale();
-  if (root === document) document.documentElement.lang = locale.replace('_', '-');
+  if (root === document) {
+    document.documentElement.lang = locale.replace('_', '-');
+    document.documentElement.dir = DMT_RTL_LANGUAGES.includes(locale) ? 'rtl' : 'ltr';
+  }
   if (locale === 'en') return;
 
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
@@ -148,7 +209,8 @@ async function dmtSetLanguage(lang) {
   }
   const messages = {};
   if (lang !== 'en') {
-    const response = await fetch(chrome.runtime.getURL(`_locales/${lang}/messages.json`));
+    const folder = DMT_EXTRA_LANGUAGES.includes(lang) ? 'i18n-extra' : '_locales';
+    const response = await fetch(chrome.runtime.getURL(`${folder}/${lang}/messages.json`));
     if (!response.ok) throw new Error(`No translation file for ${lang}`);
     const file = await response.json();
     for (const key of Object.keys(file)) {
@@ -199,13 +261,19 @@ if (dmtIsExtensionPage() && typeof document !== 'undefined') {
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     DMT_LANGUAGES,
+    DMT_RTL_LANGUAGES,
+    DMT_EXTRA_LANGUAGES,
     DMT_LANGUAGE_KEY,
+    dmtLocaleTag,
+    dmtPluralCategory,
+    dmtPluralCategories,
     dmtMessageKey,
     dmtPluralKey,
     dmtLocale,
     dmtFill,
     t,
     tn,
+    dmtEscape,
     dmtUseMessages,
     dmtTranslatePage,
   };

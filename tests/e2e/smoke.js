@@ -312,7 +312,7 @@ const check = (name, ok, detail) => { results.push({ name, ok }); console.log(`$
       && !handoff.files.includes('instructions.md')
       && (await handoff.archive.file('CLAUDE.md').async('string')).includes('Always answer in French.')
       && /Read CLAUDE\.md first/.test(await panel.inputValue('#handoffPrompt'))
-      && (await panel.locator('#handoffFile').textContent()) === 'Alpha project_claude-code.zip',
+      && (await panel.locator('#handoffText').textContent()) === 'Unzip Alpha project_claude-code.zip into an empty folder, start Claude Code there, and paste this prompt.',
     `${handoff.name} ${JSON.stringify(handoff.files)}`);
 
   // Export settings: a ZIP name and the Markdown file format
@@ -540,7 +540,7 @@ const check = (name, ok, detail) => { results.push({ name, ok }); console.log(`$
   await panel.locator('#foldersList li', { hasText: 'Trips' }).locator('button[title^="Delete the folder"]').click();
   check('deleting a folder asks first and says the chats stay',
     (await panel.locator('#confirmTitle').textContent()) === 'Delete the folder "Trips"?'
-      && /^Its 1 chat and 0 projects stay exactly as they are on claude\.ai/.test(await panel.locator('#confirmText').textContent())
+      && /^Its chats and projects stay exactly as they are on claude\.ai/.test(await panel.locator('#confirmText').textContent())
       && !(await panel.locator('#confirmCopyBox').isVisible()));
   await panel.locator('#confirmGo').click();
   await panel.waitForFunction(() => document.querySelectorAll('#foldersList li').length === 1);

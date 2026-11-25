@@ -7,7 +7,7 @@ document.addEventListener('DOMContentLoaded', () => {
   chrome.storage.sync.get(['organizationId'], (result) => {
     if (result.organizationId) {
       document.getElementById('orgId').value = result.organizationId;
-      showStatus('status', 'Organization ID loaded from saved settings', 'success');
+      showStatus('status', t('Organization ID loaded from saved settings'), 'success');
       setTimeout(() => hideStatus('status'), 2000);
     }
   });
@@ -18,19 +18,19 @@ document.getElementById('saveBtn').addEventListener('click', () => {
   const orgId = document.getElementById('orgId').value.trim();
   
   if (!orgId) {
-    showStatus('status', 'Please enter an Organization ID', 'error');
+    showStatus('status', t('Please enter an Organization ID'), 'error');
     return;
   }
   
   // Validate UUID format
   const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   if (!uuidRegex.test(orgId)) {
-    showStatus('status', 'Invalid Organization ID format. It should be a UUID like: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx', 'error');
+    showStatus('status', t('Invalid Organization ID format. It should be a UUID like: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'), 'error');
     return;
   }
   
   chrome.storage.sync.set({ organizationId: orgId }, () => {
-    showStatus('status', 'Settings saved successfully!', 'success');
+    showStatus('status', t('Settings saved successfully!'), 'success');
   });
 });
 
@@ -39,22 +39,22 @@ document.getElementById('testBtn').addEventListener('click', async () => {
   const orgId = document.getElementById('orgId').value.trim();
   
   if (!orgId) {
-    showStatus('testStatus', 'Please save an Organization ID first', 'error');
+    showStatus('testStatus', t('Please save an Organization ID first'), 'error');
     return;
   }
   
-  showStatus('testStatus', 'Testing connection...', 'success');
+  showStatus('testStatus', t('Testing connection...'), 'success');
   
   try {
     const conversations = await apiGet(conversationsPath(orgId));
-    showStatus('testStatus', `Success! Found ${conversations.length} conversations.`, 'success');
+    showStatus('testStatus', tn('Success! Found {n} conversation.', 'Success! Found {n} conversations.', conversations.length), 'success');
   } catch (error) {
     if (error.status === 401) {
-      showStatus('testStatus', 'Not signed in. Sign in to claude.ai in this browser and try again.', 'error');
+      showStatus('testStatus', t('Not signed in. Sign in to claude.ai in this browser and try again.'), 'error');
     } else if (error.status === 403) {
-      showStatus('testStatus', 'Access denied. The Organization ID might be incorrect.', 'error');
+      showStatus('testStatus', t('Access denied. The Organization ID might be incorrect.'), 'error');
     } else {
-      showStatus('testStatus', `Connection failed: ${error.message}`, 'error');
+      showStatus('testStatus', t('Connection failed: {0}', error.message), 'error');
     }
   }
 });
@@ -101,13 +101,13 @@ loadDateTimeFormatPrefs();
 
 document.getElementById('dateFormatSelect').addEventListener('change', (e) => {
   chrome.storage.local.set({ dateFormat: e.target.value }, () => {
-    showStatus('dateTimeStatus', 'Date format saved. Reload the browse page to see the change.', 'success');
+    showStatus('dateTimeStatus', t('Date format saved. Reload the browse page to see the change.'), 'success');
   });
 });
 
 document.getElementById('timeFormatSelect').addEventListener('change', (e) => {
   chrome.storage.local.set({ timeFormat: e.target.value }, () => {
-    showStatus('dateTimeStatus', 'Time format saved. Reload the browse page to see the change.', 'success');
+    showStatus('dateTimeStatus', t('Time format saved. Reload the browse page to see the change.'), 'success');
   });
 });
 
@@ -124,7 +124,7 @@ loadModelDisplayPref();
 document.querySelectorAll('input[name="modelDisplay"]').forEach((radio) => {
   radio.addEventListener('change', (e) => {
     chrome.storage.local.set({ modelDisplay: e.target.value }, () => {
-      showStatus('modelDisplayStatus', 'Model display preference saved. Reload the browse page to see the change.', 'success');
+      showStatus('modelDisplayStatus', t('Model display preference saved. Reload the browse page to see the change.'), 'success');
     });
   });
 });
@@ -135,9 +135,28 @@ chrome.storage.local.get(['showPageButton'], (result) => {
 });
 document.getElementById('showPageButton').addEventListener('change', (e) => {
   chrome.storage.local.set({ showPageButton: e.target.checked }, () => {
-    showStatus('pageButtonStatus', e.target.checked ? 'The button is on.' : 'The button is off.', 'success');
+    showStatus('pageButtonStatus', e.target.checked ? t('The button is on.') : t('The button is off.'), 'success');
   });
 });
+
+// Language: follow the browser, or one of the translations shipped with the extension
+(function setUpLanguage() {
+  const select = document.getElementById('languageSelect');
+  const names = Object.entries(DMT_LANGUAGES).sort((a, b) => a[1].localeCompare(b[1]));
+  select.replaceChildren(
+    new Option(t('Follow the browser'), 'auto'),
+    ...names.map(([code, name]) => new Option(name, code))
+  );
+  select.value = dmtI18nOverride ? dmtI18nOverride.lang : 'auto';
+  select.addEventListener('change', async () => {
+    try {
+      await dmtSetLanguage(select.value);
+      location.reload(); // this page is drawn again in the new language; others pick it up when opened
+    } catch (error) {
+      showStatus('languageStatus', t('Could not load that language: {0}', error.message), 'error');
+    }
+  });
+})();
 
 // Contact & Diagnostics
 document.getElementById('generateDiagnosticsLink').addEventListener('click', (e) => {

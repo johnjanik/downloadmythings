@@ -4,6 +4,10 @@
 // Plain script, no modules: only function declarations and `var` at the top
 // level, so the file can be injected into a tab more than once.
 
+if (typeof module !== 'undefined' && module.exports && typeof t === 'undefined') {
+  Object.assign(globalThis, require('./i18n.js'));
+}
+
 // Helper function to reconstruct the current branch from the message tree
 function getCurrentBranch(data) {
   if (!data.chat_messages || !data.current_leaf_message_uuid) {
@@ -761,7 +765,7 @@ function backupExtensionData(onComplete) {
       setTimeout(() => URL.revokeObjectURL(url), 10000);
       const snapCount = Object.keys(backup.local.modelSnapshots || {}).length;
       const exportCount = Object.keys(backup.local.exportTimestamps || {}).length;
-      if (onComplete) onComplete(true, `Backup exported — ${snapCount} model snapshot(s), ${exportCount} export record(s).`);
+      if (onComplete) onComplete(true, t('Backup exported. Model snapshots: {0}. Export records: {1}.', snapCount, exportCount));
     });
   });
 }
@@ -864,23 +868,21 @@ function showImportModeModal(onConfirm) {
   overlay.className = 'dmt-modal-overlay';
   overlay.innerHTML = `
     <div class="dmt-modal" role="dialog" aria-modal="true" aria-labelledby="dmt-modal-title">
-      <h2 id="dmt-modal-title">Import Backup</h2>
-      <div class="dmt-modal-info">
-        Choose how the imported data should be combined with your current data, then pick a backup file.
-      </div>
+      <h2 id="dmt-modal-title">${dmtEscape(t('Import Backup'))}</h2>
+      <div class="dmt-modal-info">${dmtEscape(t('Choose how the imported data should be combined with your current data, then pick a backup file.'))}</div>
       <label class="dmt-modal-option">
         <input type="radio" name="dmt-import-mode" value="merge" checked>
-        <strong>Merge with current data</strong>
-        <span class="dmt-modal-option-desc">Adds entries not present locally; keeps your current values when they overlap.</span>
+        <strong>${dmtEscape(t('Merge with current data'))}</strong>
+        <span class="dmt-modal-option-desc">${dmtEscape(t('Adds entries not present locally; keeps your current values when they overlap.'))}</span>
       </label>
       <label class="dmt-modal-option">
         <input type="radio" name="dmt-import-mode" value="replace">
-        <strong>Replace all current data</strong>
-        <span class="dmt-modal-option-desc">Overwrites everything with this backup's contents.</span>
+        <strong>${dmtEscape(t('Replace all current data'))}</strong>
+        <span class="dmt-modal-option-desc">${dmtEscape(t('Overwrites everything with the contents of this backup.'))}</span>
       </label>
       <div class="dmt-modal-actions">
-        <button type="button" class="dmt-modal-cancel">Cancel</button>
-        <button type="button" class="dmt-modal-import">Choose File&hellip;</button>
+        <button type="button" class="dmt-modal-cancel">${dmtEscape(t('Cancel'))}</button>
+        <button type="button" class="dmt-modal-import">${dmtEscape(t('Choose File...'))}</button>
       </div>
     </div>
   `;
@@ -920,13 +922,13 @@ function importBackup(file, mode, onComplete) {
     try {
       backup = JSON.parse(e.target.result);
     } catch (err) {
-      if (onComplete) onComplete(false, 'Import failed: the file is not valid JSON.');
+      if (onComplete) onComplete(false, t('Import failed: the file is not valid JSON.'));
       return;
     }
 
     if (!backup || typeof backup !== 'object' || !backup._meta ||
         !DMT_BACKUP_APP_IDS.includes(backup._meta.app) || typeof backup.local !== 'object') {
-      if (onComplete) onComplete(false, 'Import failed: this does not look like a DownloadMyThings backup file.');
+      if (onComplete) onComplete(false, t('Import failed: this does not look like a DownloadMyThings backup file.'));
       return;
     }
 
@@ -937,7 +939,7 @@ function importBackup(file, mode, onComplete) {
     if (mode === 'replace') {
       chrome.storage.local.set(backup.local, () => {
         chrome.storage.sync.set(syncData, () => {
-          if (onComplete) onComplete(true, `Import complete (replace) — ${snapCount} model snapshot(s), ${exportCount} export record(s) restored. Reload any open Claude pages and the browse page to see the changes.`);
+          if (onComplete) onComplete(true, t('Import complete, replacing what was there. Model snapshots: {0}. Export records: {1}. Reload any open Claude pages and the browse page to see the changes.', snapCount, exportCount));
         });
       });
     } else {
@@ -948,7 +950,7 @@ function importBackup(file, mode, onComplete) {
           const mergedSync = mergeStorageData(currentSync || {}, syncData);
           chrome.storage.local.set(mergedLocal, () => {
             chrome.storage.sync.set(mergedSync, () => {
-              if (onComplete) onComplete(true, `Import complete (merge) — added missing entries from backup, kept your current values on overlap. Reload any open Claude pages and the browse page to see the changes.`);
+              if (onComplete) onComplete(true, t('Import complete, merged with what was there: missing entries were added and your current values were kept where they overlap. Reload any open Claude pages and the browse page to see the changes.'));
             });
           });
         });
@@ -1080,7 +1082,7 @@ function generateDiagnostics(onComplete) {
         setTimeout(() => URL.revokeObjectURL(url), 10000);
 
         if (onComplete) {
-          onComplete(true, `Diagnostics downloaded — ${errorLog.length} error(s) captured, all IDs redacted.`);
+          onComplete(true, t('Diagnostics downloaded. Errors captured: {0}. All IDs are removed.', errorLog.length));
         }
       });
     }

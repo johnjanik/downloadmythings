@@ -1,9 +1,11 @@
 // Translations: find every English string in src/, check the translation files
 // in locales/, and produce the browser's _locales/<language>/messages.json.
 //
-//   node scripts/i18n.mjs              -> report: what each language is missing
-//   node scripts/i18n.mjs --template   -> every English string, as a starting
-//                                         point for a new locales/<language>.json
+//   node scripts/i18n.mjs                  -> report: what each language is missing
+//   node scripts/i18n.mjs --verbose        -> the same, naming every string
+//   node scripts/i18n.mjs --check de       -> check locales/de.json alone, in full
+//   node scripts/i18n.mjs --template de    -> every English string with empty
+//                                             translations, shaped for that language
 //
 // English lives in the source: t('...') and tn('one', 'other', n) in scripts,
 // plain text and title/placeholder/aria-label/alt attributes in HTML pages.
@@ -20,12 +22,15 @@ import { fileURLToPath } from 'node:url';
 import { MANIFEST_STRINGS } from './manifest.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const { DMT_LANGUAGES, dmtMessageKey, dmtPluralKey } = createRequire(import.meta.url)(path.join(root, 'src', 'lib', 'i18n.js'));
+const { DMT_LANGUAGES, DMT_EXTRA_LANGUAGES, dmtMessageKey, dmtPluralKey, dmtPluralCategories } = createRequire(import.meta.url)(path.join(root, 'src', 'lib', 'i18n.js'));
+
+// Browsers name some languages twice, or by region. These are written from another language's file.
+export const LOCALE_ALIASES = { pt_PT: 'pt_BR', no: 'nb' };
 
 export const SOURCE_LANGUAGE = 'en';
 const PLURAL_SEPARATOR = ' | ';
 const HTML_ATTRIBUTES = ['title', 'placeholder', 'aria-label', 'alt'];
-const HTML_ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', middot: '·', hellip: '…', rarr: '→', larr: '←', times: '×', copy: '©' };
+const HTML_ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', ndash: '–', mdash: '—', middot: '·', hellip: '…', rarr: '→', larr: '←', times: '×', copy: '©' };
 
 const collapse = (text) => text.replace(/\s+/g, ' ').trim();
 const hasLetter = (text) => /\p{L}/u.test(text);
@@ -58,6 +63,7 @@ export function extractFromHtml(html, where = 'html') {
   for (const [piece] of kept.matchAll(token)) {
     if (piece.startsWith('<!--') || /^<(script|style)\b/i.test(piece)) continue;
     if (piece.startsWith('<')) {
+      if (/\stranslate="no"/.test(piece)) continue;
       for (const name of HTML_ATTRIBUTES) {
         for (const match of piece.matchAll(new RegExp(`\\s${name}="([^"]*)"`, 'g'))) {
           const text = collapse(decodeEntities(match[1], problems, where));
@@ -187,7 +193,7 @@ export async function loadLocales(localesDir = path.join(root, 'locales')) {
 const markers = (text) => (text.match(/\{(?:\d+|n)\}/g) || []).sort().join(' ');
 
 export function pluralCategories(lang) {
-  return new Intl.PluralRules(lang.replace('_', '-')).resolvedOptions().pluralCategories;
+  return dmtPluralCategories(lang);
 }
 
 // Compare one translation file with the source.
@@ -284,7 +290,15 @@ export async function prepareTranslations() {
   for (const [lang, data] of Object.entries(locales)) {
     if (lang !== SOURCE_LANGUAGE) messages[lang] = buildMessages(lang, data, source);
   }
-  return { source, locales, problems, report, messages, total: source.strings.size + source.plurals.size };
+  // Where each language's messages.json goes inside the extension
+  const files = {};
+  for (const lang of Object.keys(messages)) {
+    files[`${DMT_EXTRA_LANGUAGES.includes(lang) ? 'i18n-extra' : '_locales'}/${lang}/messages.json`] = messages[lang];
+  }
+  for (const [alias, lang] of Object.entries(LOCALE_ALIASES)) {
+    if (messages[lang]) files[`_locales/${alias}/messages.json`] = { ...messages[lang], dmtLocale: { message: lang } };
+  }
+  return { source, locales, problems, report, messages, files, total: source.strings.size + source.plurals.size };
 }
 
 // ---------------------------------------------------------------- command line
@@ -292,11 +306,34 @@ export async function prepareTranslations() {
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const prepared = await prepareTranslations();
 
-  if (process.argv.includes('--template')) {
-    const template = { '@language': '' };
-    for (const text of [...prepared.source.strings.keys()].sort()) template[text] = '';
-    for (const key of [...prepared.source.plurals.keys()].sort()) template[key] = { one: '', other: '' };
+  const argument = (flag) => {
+    const at = process.argv.indexOf(flag);
+    return at === -1 ? null : (process.argv[at + 1] || '');
+  };
+
+  if (argument('--template') !== null) {
+    const lang = argument('--template');
+    if (!(lang in DMT_LANGUAGES)) {
+      console.error(`Unknown language "${lang}". Add it to DMT_LANGUAGES in src/lib/i18n.js first.`);
+      process.exit(1);
+    }
+    const template = { '@language': DMT_LANGUAGES[lang] };
+    for (const text of prepared.source.strings.keys()) template[text] = '';
+    for (const key of prepared.source.plurals.keys()) template[key] = Object.fromEntries(pluralCategories(lang).map((category) => [category, '']));
     console.log(JSON.stringify(template, null, 2));
+  } else if (argument('--check') !== null) {
+    const lang = argument('--check');
+    const data = prepared.locales[lang];
+    if (!data) {
+      console.error(`locales/${lang}.json does not exist`);
+      process.exit(1);
+    }
+    const result = checkLocale(lang, data, prepared.source);
+    for (const error of result.errors) console.log(`ERROR    ${error}`);
+    for (const text of result.missing) console.log(`MISSING  ${text}`);
+    for (const text of result.unused) console.log(`UNUSED   ${text}`);
+    console.log(`${lang}: ${prepared.total - result.missing.length} of ${prepared.total} translated, ${result.errors.length} errors, ${result.unused.length} unused`);
+    process.exit(result.errors.length + result.missing.length + result.unused.length > 0 ? 1 : 0);
   } else {
     console.log(`${prepared.total} strings in the source`);
     for (const [lang, result] of Object.entries(prepared.report)) {

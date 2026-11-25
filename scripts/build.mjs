@@ -13,6 +13,7 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { TARGETS, buildManifest } from './manifest.mjs';
+import { prepareTranslations } from './i18n.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const srcDir = path.join(root, 'src');
@@ -55,6 +56,13 @@ async function zipDirectory(dir, zipPath) {
 
 const { version } = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'));
 
+// Every string in the interface, in every language (see scripts/i18n.mjs)
+const translations = await prepareTranslations();
+if (translations.problems.length > 0) {
+  console.error(translations.problems.join('\n'));
+  process.exit(1);
+}
+
 await rm(distDir, { recursive: true, force: true });
 await mkdir(distDir, { recursive: true });
 
@@ -65,7 +73,11 @@ for (const target of TARGETS) {
     path.join(outDir, 'manifest.json'),
     JSON.stringify(buildManifest(target, version), null, 2) + '\n'
   );
-  console.log(`dist/${target}/  (v${version})`);
+  for (const [file, messages] of Object.entries(translations.files)) {
+    await mkdir(path.dirname(path.join(outDir, file)), { recursive: true });
+    await writeFile(path.join(outDir, file), JSON.stringify(messages, null, 1) + '\n');
+  }
+  console.log(`dist/${target}/  (v${version}, ${Object.keys(translations.messages).length} languages)`);
 
   if (wantZip) {
     const zipName = `downloadmythings-${target}-v${version}.zip`;

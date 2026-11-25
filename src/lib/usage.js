@@ -8,22 +8,27 @@ if (typeof module !== 'undefined' && module.exports && typeof getCurrentBranch =
   Object.assign(globalThis, require('./utils.js'));
 }
 
+if (typeof module !== 'undefined' && module.exports && typeof t === 'undefined') {
+  Object.assign(globalThis, require('./i18n.js'));
+}
+
 // The windows claude.ai reports, in the order they are shown
-var DMT_USAGE_LABELS = {
-  five_hour: 'Current session (5 hours)',
-  seven_day: 'This week, all models',
-  seven_day_opus: 'This week, Opus',
-  seven_day_sonnet: 'This week, Sonnet',
-  seven_day_oauth_apps: 'This week, connected apps',
-  extra_usage: 'Extra usage'
-};
+var DMT_USAGE_ORDER = ['five_hour', 'seven_day', 'seven_day_opus', 'seven_day_sonnet', 'seven_day_oauth_apps', 'extra_usage'];
 
 var DMT_CONTEXT_WINDOW_TOKENS = 200000; // the standard window, used as the yardstick
 var DMT_CHARS_PER_TOKEN = 4;            // a rough average for English text
 
 // "seven_day_haiku" -> "Seven day haiku", for a window this version has no name for
 function usageLabel(key) {
-  if (DMT_USAGE_LABELS[key]) return DMT_USAGE_LABELS[key];
+  switch (key) {
+    case 'five_hour': return t('Current session (5 hours)');
+    case 'seven_day': return t('This week, all models');
+    case 'seven_day_opus': return t('This week, Opus');
+    case 'seven_day_sonnet': return t('This week, Sonnet');
+    case 'seven_day_oauth_apps': return t('This week, connected apps');
+    case 'extra_usage': return t('Extra usage');
+    default: break;
+  }
   const words = String(key).replace(/_/g, ' ').trim();
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
@@ -42,7 +47,7 @@ function normalizeUsage(raw) {
       resetsAt: typeof entry.resets_at === 'string' ? entry.resets_at : null
     });
   }
-  const order = Object.keys(DMT_USAGE_LABELS);
+  const order = DMT_USAGE_ORDER;
   const rank = (key) => (order.includes(key) ? order.indexOf(key) : order.length);
   return windows.sort((a, b) => rank(a.key) - rank(b.key) || a.key.localeCompare(b.key));
 }
@@ -53,11 +58,10 @@ function describeReset(resetsAt, now) {
   const from = now instanceof Date ? now.getTime() : Date.now();
   if (Number.isNaN(at) || at <= from) return '';
   const minutes = Math.round((at - from) / 60000);
-  if (minutes < 60) return `resets in ${Math.max(1, minutes)} min`;
+  if (minutes < 60) return t('resets in {0} min', Math.max(1, minutes));
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `resets in ${hours} h ${minutes % 60} min`;
-  const days = Math.round(hours / 24);
-  return `resets in ${days} day${days === 1 ? '' : 's'}`;
+  if (hours < 24) return t('resets in {0} h {1} min', hours, minutes % 60);
+  return tn('resets in {n} day', 'resets in {n} days', Math.round(hours / 24));
 }
 
 function estimateTokens(characters) {
@@ -98,7 +102,7 @@ function conversationTokenEstimate(data) {
 // Node (vitest) only; in the browser these are plain globals.
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
-    DMT_USAGE_LABELS,
+    DMT_USAGE_ORDER,
     DMT_CONTEXT_WINDOW_TOKENS,
     usageLabel,
     normalizeUsage,

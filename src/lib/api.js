@@ -9,6 +9,10 @@
 
 var DMT_CLAUDE_ORIGIN = 'https://claude.ai';
 
+if (typeof module !== 'undefined' && module.exports && typeof t === 'undefined') {
+  Object.assign(globalThis, require('./i18n.js'));
+}
+
 if (typeof module !== 'undefined' && module.exports && typeof recordModelSnapshots === 'undefined') {
   Object.assign(globalThis, require('./store.js'));
 }
@@ -54,12 +58,12 @@ async function apiGet(path) {
     });
   } catch (cause) {
     if (cause.cancelled || cause.name === 'AbortError') throw cancelledError();
-    const error = new Error(`Could not reach claude.ai (${cause.message})`);
+    const error = new Error(t('Could not reach claude.ai ({0})', cause.message));
     error.status = 0;
     throw error;
   }
   if (!response.ok) {
-    const error = new Error(`claude.ai returned HTTP ${response.status}`);
+    const error = new Error(t('claude.ai returned HTTP {0}', response.status));
     error.status = response.status;
     throw error;
   }
@@ -77,7 +81,7 @@ async function apiGetBlob(pathOrUrl) {
     url = null;
   }
   if (!url || url.origin !== DMT_CLAUDE_ORIGIN) {
-    const error = new Error('Not a claude.ai address');
+    const error = new Error(t('Not a claude.ai address'));
     error.status = -1;
     throw error;
   }
@@ -87,19 +91,19 @@ async function apiGetBlob(pathOrUrl) {
     response = await fetchWithRetry(url.href, { credentials: 'include' });
   } catch (cause) {
     if (cause.cancelled || cause.name === 'AbortError') throw cancelledError();
-    const error = new Error(`Could not reach claude.ai (${cause.message})`);
+    const error = new Error(t('Could not reach claude.ai ({0})', cause.message));
     error.status = 0;
     throw error;
   }
   if (!response.ok) {
-    const error = new Error(`claude.ai returned HTTP ${response.status}`);
+    const error = new Error(t('claude.ai returned HTTP {0}', response.status));
     error.status = response.status;
     throw error;
   }
   const blob = await response.blob();
   // An HTML page here is the web app or a sign-in page, not the file
   if (blob.size === 0 || /^text\/html/i.test(blob.type)) {
-    const error = new Error(blob.size === 0 ? 'claude.ai returned an empty file' : 'claude.ai returned a web page instead of the file');
+    const error = new Error(blob.size === 0 ? t('claude.ai returned an empty file') : t('claude.ai returned a web page instead of the file'));
     error.status = -1;
     throw error;
   }
@@ -121,12 +125,12 @@ async function apiSend(method, path, body) {
     });
   } catch (cause) {
     if (cause.cancelled || cause.name === 'AbortError') throw cancelledError();
-    const error = new Error(`Could not reach claude.ai (${cause.message})`);
+    const error = new Error(t('Could not reach claude.ai ({0})', cause.message));
     error.status = 0;
     throw error;
   }
   if (!response.ok) {
-    const error = new Error(`claude.ai returned HTTP ${response.status}`);
+    const error = new Error(t('claude.ai returned HTTP {0}', response.status));
     error.status = response.status;
     throw error;
   }
@@ -143,7 +147,7 @@ function blobToDataUrl(blob) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result);
-    reader.onerror = () => reject(reader.error || new Error('Could not read the file'));
+    reader.onerror = () => reject(reader.error || new Error(t('Could not read the file')));
     reader.readAsDataURL(blob);
   });
 }
@@ -263,7 +267,7 @@ async function directOrRelay(direct, action, data, pick) {
       return result;
     } catch (relayError) {
       const error = new Error(
-        `${directError.message}. Sign in to claude.ai in this browser, then try again.`
+        t('{0}. Sign in to claude.ai in this browser, then try again.', directError.message)
       );
       error.status = directError.status;
       throw error;
@@ -277,7 +281,7 @@ async function detectOrgId() {
   return directOrRelay(
     async () => {
       const orgId = pickChatOrgId(await apiGet('/api/organizations'));
-      if (!orgId) throw new Error('No organizations found for this account');
+      if (!orgId) throw new Error(t('No organizations found for this account'));
       return orgId;
     },
     'detectOrgId',

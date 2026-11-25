@@ -30,12 +30,12 @@ function formatProjectDate(value) {
 }
 
 function updateProjectChrome(shown) {
-  document.getElementById('stats').textContent = `Showing ${shown} of ${allProjects.length} projects`;
+  document.getElementById('stats').textContent = tn('Showing {0} of {n} project', 'Showing {0} of {n} projects', allProjects.length, shown);
   const button = document.getElementById('exportAllBtn');
   button.disabled = allProjects.length === 0;
   button.textContent = selectedProjects.size > 0
-    ? `Export Selected (${selectedProjects.size})`
-    : 'Export All Projects';
+    ? t('Export Selected ({0})', selectedProjects.size)
+    : t('Export All Projects');
 }
 
 function displayProjects() {
@@ -44,14 +44,14 @@ function displayProjects() {
   updateProjectChrome(projects.length);
 
   if (projects.length === 0) {
-    tableContent.innerHTML = '<div class="no-results">No projects found</div>';
+    tableContent.innerHTML = `<div class="no-results">${escapeHtml(t('No projects found'))}</div>`;
     return;
   }
 
   const counts = chatCountsByProject();
   const rows = projects.map((project) => {
     const id = escapeHtml(project.uuid);
-    const name = project.name || 'Untitled Project';
+    const name = project.name || t('Untitled Project');
     return `
       <tr data-id="${id}">
         <td>
@@ -66,7 +66,7 @@ function displayProjects() {
         <td class="date">${escapeHtml(formatProjectDate(project.created_at))}</td>
         <td>
           <div class="actions">
-            <button class="btn-small btn-export-project" data-id="${id}">Export</button>
+            <button class="btn-small btn-export-project" data-id="${id}">${escapeHtml(t('Export'))}</button>
           </div>
         </td>
         <td class="checkbox-col">
@@ -80,11 +80,11 @@ function displayProjects() {
     <table>
       <thead>
         <tr>
-          <th>Project</th>
-          <th>Chats</th>
-          <th>Updated</th>
-          <th>Created</th>
-          <th>Actions</th>
+          <th>${escapeHtml(t('Project'))}</th>
+          <th>${escapeHtml(t('Chats'))}</th>
+          <th>${escapeHtml(t('Updated'))}</th>
+          <th>${escapeHtml(t('Created'))}</th>
+          <th>${escapeHtml(t('Actions'))}</th>
           <th class="checkbox-col">
             <input type="checkbox" id="selectAllProjects" class="select-all-checkbox" ${selectedProjects.size > 0 ? 'checked' : ''}>
           </th>
@@ -131,12 +131,12 @@ function exportSelectedProjects() {
 
 async function exportProjects(projects) {
   if (projects.length === 0) {
-    showToast('No projects to export', true);
+    showToast(t('No projects to export'), true);
     return;
   }
   const options = readProjectExportOptions();
   if (!options.includeInstructions && !options.includeKnowledge && !options.includeProjectChats) {
-    showToast('Nothing to export. Tick Instructions, Knowledge files or Project chats.', true);
+    showToast(t('Nothing to export. Tick Instructions, Knowledge files or Project chats.'), true);
     return;
   }
 
@@ -149,17 +149,17 @@ async function exportProjects(projects) {
   const previousTitle = progressTitle.textContent;
 
   button.disabled = true;
-  progressTitle.textContent = projects.length === 1 ? 'Exporting Project' : 'Exporting Projects';
+  progressTitle.textContent = projects.length === 1 ? t('Exporting Project') : t('Exporting Projects');
   progressBar.style.width = '0%';
   progressStats.textContent = '';
-  progressText.textContent = 'Preparing export...';
+  progressText.textContent = t('Preparing export...');
   progressModal.style.display = 'block';
 
   let cancelled = false;
   document.getElementById('cancelExport').onclick = () => {
     cancelled = true;
     progressModal.style.display = 'none';
-    showToast('Export cancelled', true);
+    showToast(t('Export cancelled'), true);
   };
 
   try {
@@ -175,10 +175,10 @@ async function exportProjects(projects) {
     await loadExportTimestamps(); // project chats now count as exported
     const summary = result.summary;
     const needsAttention = summary.failures > 0 || summary.byFidelity.missing > 0;
-    showToast(`Exported ${describeProjectExport(summary)}`, needsAttention, 8000);
+    showToast(t('Exported {0}', describeProjectExport(summary)), needsAttention, 8000);
   } catch (error) {
     console.error('Project export error:', error);
-    showToast(`Export failed: ${error.message}`, true);
+    showToast(t('Export failed: {0}', error.message), true);
   } finally {
     progressModal.style.display = 'none';
     progressTitle.textContent = previousTitle;
@@ -203,8 +203,8 @@ function setView(view) {
   // "Project chats" replaces the plain "Chats" switch in this view
   document.getElementById('includeChats').closest('label').style.display = projectsView ? 'none' : '';
   document.getElementById('searchInput').placeholder = projectsView
-    ? 'Search projects by name...'
-    : (statusFilter === 'projects' ? 'Search projects by name...' : 'Search conversations by name...');
+    ? t('Search projects by name...')
+    : (statusFilter === 'projects' ? t('Search projects by name...') : t('Search conversations by name...'));
 
   applyFiltersAndSort();
 }

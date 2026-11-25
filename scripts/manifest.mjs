@@ -21,6 +21,7 @@ const ICONS = {
 // from the built manifest when it has to inject the scripts itself.
 export const CONTENT_SCRIPTS = [
   'vendor/jszip.min.js',
+  'lib/i18n.js',
   'lib/utils.js',
   'lib/store.js',
   'lib/api.js',
@@ -31,11 +32,17 @@ export const CONTENT_SCRIPTS = [
   'content.js',
 ];
 
+// English text the manifest shows. The build translates it like every other
+// string and the manifest refers to it by name (see scripts/i18n.mjs).
+const DESCRIPTION = 'Download your projects, chats and files from claude.ai. Free, local and open source.';
+export const MANIFEST_STRINGS = [DESCRIPTION];
+
 export function buildManifest(target, version) {
   const shared = {
     name: 'DownloadMyThings',
     version,
-    description: 'Download your projects, chats and files from claude.ai. Free, local and open source.',
+    description: '__MSG_extDescription__',
+    default_locale: 'en',
     icons: ICONS,
     content_scripts: [
       { matches: [CLAUDE_HOST], js: CONTENT_SCRIPTS },

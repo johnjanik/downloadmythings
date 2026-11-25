@@ -58,13 +58,13 @@ async function loadUsage() {
     card.hidden = false;
     $('usageRows').replaceChildren(...windows.map((item) => meterRow(item.label, `${item.percent}%`, item.percent, describeReset(item.resetsAt))));
     $('usageNote').textContent = windows.length > 0
-      ? `As claude.ai reported at ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.`
-      : 'claude.ai returned no limits for this account.';
+      ? t('As claude.ai reported at {0}.', new Date().toLocaleTimeString(dmtLocaleTag(), { hour: 'numeric', minute: '2-digit' }))
+      : t('claude.ai returned no limits for this account.');
   } catch (error) {
     if (request !== insights.usageRequest) return;
     card.hidden = false;
     $('usageRows').replaceChildren();
-    $('usageNote').textContent = `claude.ai did not return your limits: ${error.message}`;
+    $('usageNote').textContent = t('claude.ai did not return your limits: {0}', error.message);
   }
 }
 
@@ -73,8 +73,8 @@ async function loadUsage() {
 function showChatSize(estimate) {
   $('chatSize').hidden = !estimate;
   if (!estimate) return;
-  $('chatSizeLabel').textContent = `About ${formatTokens(estimate.tokens)} tokens`;
-  $('chatSizePercent').textContent = `${estimate.percent}% of a 200k window`;
+  $('chatSizeLabel').textContent = t('About {0} tokens', formatTokens(estimate.tokens));
+  $('chatSizePercent').textContent = t('{0}% of a 200k window', estimate.percent);
   $('chatSizeBar').style.width = `${estimate.percent}%`;
   $('chatSizeBar').className = estimate.percent >= 90 ? 'progress-bar high' : 'progress-bar';
 }
@@ -122,19 +122,19 @@ function renderSizeRanking() {
     if (!present.has(name)) insights.ticked.delete(name);
   }
 
-  let summary = 'Counting files';
+  let summary = t('Counting files');
   if (state.knowledge) {
     summary = ranked.rows.length === 0
-      ? 'This project has no knowledge files.'
-      : `About ${formatTokens(ranked.totalTokens)} tokens of text in ${plural(ranked.rows.length, 'file')}, largest first.`;
-    if (ranked.unknown > 0) summary += ` claude.ai gives no size for ${ranked.unknown} of them.`;
+      ? t('This project has no knowledge files.')
+      : tn('About {0} tokens of text in {n} file, largest first.', 'About {0} tokens of text in {n} files, largest first.', ranked.rows.length, formatTokens(ranked.totalTokens));
+    if (ranked.unknown > 0) summary += ` ${t('claude.ai gives no size for {0} of them.', ranked.unknown)}`;
   }
   $('sizeSummary').textContent = summary;
 
   const updateButton = () => {
     const button = $('backupTicked');
     button.disabled = insights.ticked.size === 0 || Boolean(state.job);
-    button.textContent = insights.ticked.size > 0 ? `Back up ticked files (${insights.ticked.size})` : 'Back up ticked files';
+    button.textContent = insights.ticked.size > 0 ? t('Back up ticked files ({0})', insights.ticked.size) : t('Back up ticked files');
   };
 
   $('sizeList').replaceChildren(...ranked.rows.map((entry) => {
@@ -142,7 +142,7 @@ function renderSizeRanking() {
     const box = document.createElement('input');
     box.type = 'checkbox';
     box.checked = insights.ticked.has(entry.name);
-    box.setAttribute('aria-label', `Tick ${entry.name}`);
+    box.setAttribute('aria-label', t('Tick {0}', entry.name));
     box.addEventListener('change', () => {
       if (box.checked) insights.ticked.add(entry.name);
       else insights.ticked.delete(entry.name);
@@ -157,8 +157,8 @@ function renderSizeRanking() {
     const meta = document.createElement('div');
     meta.className = 'meta';
     meta.textContent = entry.tokens === null
-      ? 'Size not reported'
-      : `About ${formatTokens(entry.tokens)} tokens · ${entry.share}% of the total`;
+      ? t('Size not reported')
+      : t('About {0} tokens · {1}% of the total', formatTokens(entry.tokens), entry.share);
     main.append(name, meta);
     if (entry.share !== null) {
       const track = document.createElement('div');
@@ -181,9 +181,13 @@ function showRecovery(names) {
   const card = $('recoveryCard');
   card.hidden = names.length === 0;
   if (names.length === 0) return;
-  $('recoveryText').textContent = `${plural(names.length, 'file')} could not be saved in the original format. Claude can reach the project's files itself and hand them over as a ZIP.`;
+  $('recoveryText').textContent = tn(
+    '{n} file could not be saved in the original format. Claude can reach the project\'s files itself and hand them over as a ZIP.',
+    '{n} files could not be saved in the original format. Claude can reach the project\'s files itself and hand them over as a ZIP.',
+    names.length
+  );
   $('recoveryPrompt').value = buildRecoveryPrompt(names);
-  $('copyRecovery').textContent = 'Copy prompt';
+  $('copyRecovery').textContent = t('Copy prompt');
 }
 
 // ---------------------------------------------------------------- the project's folder
@@ -194,7 +198,7 @@ function renderProjectFolder() {
   box.hidden = !state.project || folders.length === 0;
   if (box.hidden) return;
   const select = $('projectFolder');
-  select.replaceChildren(new Option('Not in a folder', ''), ...folders.map((folder) => new Option(folder.name, folder.id)));
+  select.replaceChildren(new Option(t('Not in a folder'), ''), ...folders.map((folder) => new Option(folder.name, folder.id)));
   const current = folderOf(state.folders, 'projects', state.project.uuid);
   select.value = current ? current.id : '';
 }
@@ -216,7 +220,7 @@ document.addEventListener('DOMContentLoaded', () => {
   $('copyRecovery').addEventListener('click', async () => {
     try {
       await navigator.clipboard.writeText($('recoveryPrompt').value);
-      $('copyRecovery').textContent = 'Copied';
+      $('copyRecovery').textContent = t('Copied');
     } catch (error) {
       $('recoveryPrompt').select(); // clipboard refused: leave the text selected to copy by hand
     }

@@ -37,13 +37,13 @@
   }
 
   function idleLabel(target) {
-    return target.kind === 'project' ? 'Download project' : 'Download chat';
+    return target.kind === 'project' ? t('Download project') : t('Download chat');
   }
 
   function idleTitle(target) {
     return target.kind === 'project'
-      ? 'DownloadMyThings: save this project (instructions, knowledge files and chats) as a ZIP'
-      : 'DownloadMyThings: save this conversation. Change the format in the extension popup.';
+      ? t('DownloadMyThings: save this project (instructions, knowledge files and chats) as a ZIP')
+      : t('DownloadMyThings: save this conversation. Change the format in the extension popup.');
   }
 
   function createIcon() {
@@ -146,10 +146,10 @@
     if (target.kind === 'conversation') {
       if (options.format === 'pdf') {
         await startPrintJob({ orgId: orgId, conversations: [{ uuid: target.id, name: '' }], options: options });
-        return 'Opened the print view';
+        return t('Opened the print view');
       }
       var saved = await exportConversationToFile(orgId, target.id, options);
-      return 'Saved ' + saved.filename;
+      return t('Saved {0}', saved.filename);
     }
 
     // A project ZIP holds files, so the print-to-PDF format falls back to Markdown
@@ -158,20 +158,20 @@
     var project = lists[0].find(function (item) { return item.uuid === target.id; })
       || await getProject(orgId, target.id);
     var result = await exportProjectsToZip(orgId, [project], lists[1], projectOptions);
-    return 'Saved ' + result.filename + ' (' + describeProjectExport(result.summary) + ')';
+    return t('Saved {0} ({1})', result.filename, describeProjectExport(result.summary));
   }
 
   async function onClick() {
     var target = pageTarget();
     if (busy || !target) return;
     busy = true;
-    flash('working', 'Downloading...', 'DownloadMyThings is working');
+    flash('working', t('Downloading...'), t('DownloadMyThings is working'));
     try {
       var message = await exportTarget(target);
-      flash('done', 'Saved', message, 2500);
+      flash('done', t('Saved'), message, 2500);
     } catch (error) {
       console.warn('DownloadMyThings:', error);
-      flash('error', 'Failed', 'DownloadMyThings: ' + error.message, 6000);
+      flash('error', t('Failed'), 'DownloadMyThings: ' + error.message, 6000);
     } finally {
       busy = false;
     }
@@ -191,10 +191,18 @@
 
   chrome.storage.local.get(['showPageButton'], function (result) {
     enabled = !result || result.showPageButton !== false;
-    refresh();
+    // The language chosen in Options, if any, before the button is first drawn
+    dmtLoadLanguage().then(refresh);
   });
   chrome.storage.onChanged.addListener(function (changes, area) {
-    if (area !== 'local' || !changes.showPageButton || !isAlive()) return;
+    if (area !== 'local' || !isAlive()) return;
+    if (changes[DMT_LANGUAGE_KEY]) {
+      dmtLoadLanguage().then(function () {
+        if (!busy) hide(); // drawn again in the new language
+        refresh();
+      });
+    }
+    if (!changes.showPageButton) return;
     enabled = changes.showPageButton.newValue !== false;
     refresh();
   });

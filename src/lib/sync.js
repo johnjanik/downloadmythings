@@ -125,9 +125,9 @@ function baseNameOf(path) {
 
 // "12 written, 1,043 unchanged" (+ ", 2 failed")
 function describeSync(counts) {
-  const parts = [`${counts.written} written`, `${counts.unchanged} unchanged`];
-  if (counts.renamed > 0) parts.push(`${counts.renamed} renamed`);
-  if (counts.failed > 0) parts.push(`${counts.failed} failed`);
+  const parts = [t('{0} written', counts.written), t('{0} unchanged', counts.unchanged)];
+  if (counts.renamed > 0) parts.push(t('{0} renamed', counts.renamed));
+  if (counts.failed > 0) parts.push(t('{0} failed', counts.failed));
   return parts.join(', ');
 }
 
@@ -172,7 +172,7 @@ async function syncAccountToFolder(orgId, dir, projects, conversations, options,
     if (isCancelled()) return finish(true);
     const name = project.name || 'Untitled Project';
     const base = projectFolder(project);
-    report(`${name}: instructions and files`, percent());
+    report(t('{0}: instructions and files', name), percent());
 
     if (o.includeInstructions) {
       try {
@@ -284,7 +284,7 @@ async function syncAccountToFolder(orgId, dir, projects, conversations, options,
     let sinceSave = 0;
     for (let i = 0; i < wanted.length; i += DMT_BULK_BATCH_SIZE) {
       if (isCancelled()) return finish(true);
-      report(`Chats: ${Math.min(i + DMT_BULK_BATCH_SIZE, wanted.length)} of ${wanted.length} to update`, percent());
+      report(t('Chats: {0} of {1} to update', Math.min(i + DMT_BULK_BATCH_SIZE, wanted.length), wanted.length), percent());
 
       const fetched = await Promise.all(wanted.slice(i, i + DMT_BULK_BATCH_SIZE).map((conv) => getConversation(orgId, conv.uuid).then(
         (data) => ({ conv, data }),

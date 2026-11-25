@@ -165,7 +165,7 @@ async function collectProject(orgId, project, conversations, options, root, hook
 
   // 1. Instructions live in the project detail, as `prompt_template`
   if (o.includeInstructions) {
-    step('Reading instructions');
+    step(t('Reading instructions'));
     let detail = project;
     try {
       detail = { ...project, ...(await getProject(orgId, project.uuid)) };
@@ -193,7 +193,7 @@ async function collectProject(orgId, project, conversations, options, root, hook
 
   // 2. Knowledge files
   if (o.includeKnowledge && !isCancelled()) {
-    step('Listing knowledge files');
+    step(t('Listing knowledge files'));
     let docs = [];
     let files = [];
     try { docs = await listProjectDocs(orgId, project.uuid); } catch (error) { fail('knowledge documents', 'docs', error); }
@@ -203,7 +203,7 @@ async function collectProject(orgId, project, conversations, options, root, hook
     const items = mergeProjectKnowledge(docs, files).filter((item) => !wantedNames || wantedNames.has(item.name));
     const usedNames = new Set();
     for (let i = 0; i < items.length && !isCancelled(); i++) {
-      step(`Knowledge file ${i + 1} of ${items.length}: ${items[i].name}`);
+      step(t('Knowledge file {0} of {1}: {2}', i + 1, items.length, items[i].name));
       if (o.fileFormat === 'markdown') items[i].preferText = true;
       const { content, record } = await fetchFileItem(orgId, items[i], usedNames, filesFolder);
       if (content !== null) entries.push({ path: `${root}${record.path}`, content });
@@ -219,7 +219,7 @@ async function collectProject(orgId, project, conversations, options, root, hook
     const wantsArtifactFiles = o.extractArtifacts || o.flattenArtifacts;
 
     for (let i = 0; i < chats.length && !isCancelled(); i += DMT_BULK_BATCH_SIZE) {
-      step(`Chats ${Math.min(i + DMT_BULK_BATCH_SIZE, chats.length)} of ${chats.length}`);
+      step(t('Chats {0} of {1}', Math.min(i + DMT_BULK_BATCH_SIZE, chats.length), chats.length));
       // Fetch a batch in parallel, then file it in list order (stable names)
       const fetched = await Promise.all(chats.slice(i, i + DMT_BULK_BATCH_SIZE).map((conv) => getConversation(orgId, conv.uuid).then(
         (data) => ({ conv, data }),
@@ -296,19 +296,27 @@ function summarizeProjectManifests(manifests) {
 function describeProjectExport(summary) {
   const parts = [];
   if (summary.knowledge > 0) {
-    const order = ['original', 'pdf-rendition', 'extracted-text', 'preview', 'thumbnail', 'missing'];
-    const detail = order
+    // How many files came out at each fidelity, in the manifest's own words
+    const counted = {
+      'original': (count) => t('{0} original', count),
+      'pdf-rendition': (count) => t('{0} pdf-rendition', count),
+      'extracted-text': (count) => t('{0} extracted-text', count),
+      'preview': (count) => t('{0} preview', count),
+      'thumbnail': (count) => t('{0} thumbnail', count),
+      'missing': (count) => t('{0} missing', count)
+    };
+    const detail = Object.keys(counted)
       .filter((fidelity) => summary.byFidelity[fidelity])
-      .map((fidelity) => `${summary.byFidelity[fidelity]} ${fidelity}`)
+      .map((fidelity) => counted[fidelity](summary.byFidelity[fidelity]))
       .join(', ');
-    parts.push(`${summary.knowledge} knowledge file${summary.knowledge === 1 ? '' : 's'} (${detail})`);
+    parts.push(tn('{n} knowledge file ({0})', '{n} knowledge files ({0})', summary.knowledge, detail));
   }
-  if (summary.chats > 0) parts.push(`${summary.chats} chat${summary.chats === 1 ? '' : 's'}`);
-  if (summary.attachments > 0) parts.push(`${summary.attachments} attachment${summary.attachments === 1 ? '' : 's'}`);
-  if (summary.attachmentsMissing > 0) parts.push(`${summary.attachmentsMissing} attachment${summary.attachmentsMissing === 1 ? '' : 's'} missing`);
-  if (summary.failures > 0) parts.push(`${summary.failures} problem${summary.failures === 1 ? '' : 's'}, see manifest.json`);
-  const subject = `${summary.projects} project${summary.projects === 1 ? '' : 's'}`;
-  return parts.length > 0 ? `${subject}: ${parts.join(', ')}` : `${subject}: nothing to save`;
+  if (summary.chats > 0) parts.push(tn('{n} chat', '{n} chats', summary.chats));
+  if (summary.attachments > 0) parts.push(tn('{n} attachment', '{n} attachments', summary.attachments));
+  if (summary.attachmentsMissing > 0) parts.push(tn('{n} attachment missing', '{n} attachments missing', summary.attachmentsMissing));
+  if (summary.failures > 0) parts.push(tn('{n} problem, see manifest.json', '{n} problems, see manifest.json', summary.failures));
+  const subject = tn('{n} project', '{n} projects', summary.projects);
+  return parts.length > 0 ? t('{0}: {1}', subject, parts.join(', ')) : t('{0}: nothing to save', subject);
 }
 
 function projectZipFilename(projects, now) {
@@ -332,7 +340,7 @@ async function exportProjectsToZip(orgId, projects, conversations, options, hook
   const chosen = normalizeProjectOptions(options).zipFilename.trim();
   const baseName = (chosen ? `${sanitizeFilename(chosen.replace(/\.zip$/i, ''))}.zip` : projectZipFilename(projects)).replace(/\.zip$/, '');
   const limit = typeof (options || {}).partLimitBytes === 'number' ? options.partLimitBytes : DMT_PART_LIMIT_BYTES;
-  const writer = createPartWriter(baseName, limit, (percent) => report('Creating ZIP file...', percent), isCancelled);
+  const writer = createPartWriter(baseName, limit, (percent) => report(t('Creating ZIP file...'), percent), isCancelled);
   const stopped = () => ({ cancelled: true, filename: null, parts: writer.parts, summary: null, manifests });
 
   const manifests = [];

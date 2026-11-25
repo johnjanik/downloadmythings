@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>DownloadMyThings</title>
+  <title translate="no">DownloadMyThings</title>
   <link rel="stylesheet" href="theme.css">
   <style>
     * { box-sizing: border-box; }
@@ -154,7 +154,7 @@
   <div class="shell">
     <header class="top">
       <img src="icons/icon48.png" alt="">
-      <div class="title">DownloadMyThings</div>
+      <div class="title" translate="no">DownloadMyThings</div>
       <button class="icon-btn" id="popOut" title="Open in its own tab" aria-label="Open in its own tab">&#8599;</button>
     </header>
 
@@ -244,7 +244,7 @@
 
       <section class="card" id="handoffCard" hidden>
         <h2>Next: open it in Claude Code</h2>
-        <p>Unzip <span id="handoffFile"></span> into an empty folder, start Claude Code there, and paste this prompt.</p>
+        <p id="handoffText"></p>
         <textarea id="handoffPrompt" class="prompt" rows="4" readonly></textarea>
         <button class="btn" id="copyHandoff">Copy prompt</button>
       </section>
@@ -341,7 +341,7 @@
         <input type="search" id="librarySearch" placeholder="Search chats by title or project">
       </label>
       <div class="hint" id="deepSearchOffer">
-        <a href="#" id="enableDeepSearch">Search inside messages too</a>. This reads every chat once and keeps the text on this computer.
+        <a href="#" id="enableDeepSearch">Search inside messages too</a>. <span>This reads every chat once and keeps the text on this computer.</span>
       </div>
       <div class="hint" id="deepSearchStatus" hidden></div>
       <div class="library-bar">
@@ -402,6 +402,7 @@
 
   <script src="theme.js"></script>
   <script src="vendor/jszip.min.js"></script>
+  <script src="lib/i18n.js"></script>
   <script src="lib/utils.js"></script>
   <script src="lib/store.js"></script>
   <script src="lib/api.js"></script>

@@ -79,7 +79,7 @@ function getDisplayModel(conv) {
     return {
       model: useCurrent ? current : original,
       other: useCurrent ? original : current,
-      otherLabel: useCurrent ? 'Originally' : 'Currently',
+      otherTitle: (name) => (useCurrent ? t('Originally {0}', name) : t('Currently {0}', name)),
       bounced
     };
   }
@@ -114,9 +114,9 @@ function formatDate(dt) {
 
 function formatTime(dt) {
   if (timeFormat === '24h') {
-    return dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+    return dt.toLocaleTimeString(dmtLocaleTag(), { hour: '2-digit', minute: '2-digit', hour12: false });
   }
-  return dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+  return dt.toLocaleTimeString(dmtLocaleTag(), { hour: '2-digit', minute: '2-digit', hour12: true });
 }
 
 function isNewOrUpdated(conv) {
@@ -147,7 +147,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const elapsed = Date.now() - loadingStart;
   if (elapsed < 1000) await new Promise(r => setTimeout(r, 1000 - elapsed));
   const loadingText = document.getElementById('loadingText');
-  if (loadingText) loadingText.textContent = 'Loading conversations...';
+  if (loadingText) loadingText.textContent = t('Loading conversations...');
   await loadConversations();
 });
 
@@ -163,7 +163,7 @@ async function loadOrgId() {
 
   orgId = await getStoredOrgId();
   if (!orgId) {
-    showError('Could not find your organization. Sign in to claude.ai in this browser and reload this page, or set the Organization ID in the extension options.');
+    showError(t('Could not find your organization. Sign in to claude.ai in this browser and reload this page, or set the Organization ID in the extension options.'));
   }
 }
 
@@ -177,7 +177,7 @@ async function loadProjects() {
     projectsMap = {};
     projects.forEach(project => {
       const projectId = project.uuid || project.id;
-      const projectName = project.name || project.title || 'Untitled Project';
+      const projectName = project.name || project.title || t('Untitled Project');
       projectsMap[projectId] = projectName;
     });
     return projects;
@@ -207,7 +207,7 @@ async function loadConversations() {
     applyFiltersAndSort();
   } catch (error) {
     console.error('Error loading conversations:', error);
-    showError(`Failed to load conversations: ${error.message}`);
+    showError(t('Failed to load conversations: {0}', error.message));
   }
 }
 
@@ -350,7 +350,7 @@ function displayConversations() {
   const tableContent = document.getElementById('tableContent');
 
   if (filteredConversations.length === 0) {
-    tableContent.innerHTML = '<div class="no-results">No conversations found</div>';
+    tableContent.innerHTML = `<div class="no-results">${escapeHtml(t('No conversations found'))}</div>`;
     return;
   }
 
@@ -358,12 +358,12 @@ function displayConversations() {
     <table>
       <thead>
         <tr>
-          <th class="sortable" data-sort="name">Name${getSortIndicator('name')}</th>
-          <th class="sortable" data-sort="project">Project${getSortIndicator('project')}</th>
-          <th class="sortable" data-sort="updated">Updated${getSortIndicator('updated')}</th>
-          <th class="sortable" data-sort="created">Created${getSortIndicator('created')}</th>
-          <th class="sortable" data-sort="model">Model${getSortIndicator('model')}</th>
-          <th>Actions</th>
+          <th class="sortable" data-sort="name">${escapeHtml(t('Name'))}${getSortIndicator('name')}</th>
+          <th class="sortable" data-sort="project">${escapeHtml(t('Project'))}${getSortIndicator('project')}</th>
+          <th class="sortable" data-sort="updated">${escapeHtml(t('Updated'))}${getSortIndicator('updated')}</th>
+          <th class="sortable" data-sort="created">${escapeHtml(t('Created'))}${getSortIndicator('created')}</th>
+          <th class="sortable" data-sort="model">${escapeHtml(t('Model'))}${getSortIndicator('model')}</th>
+          <th>${escapeHtml(t('Actions'))}</th>
           <th class="checkbox-col">
             <input type="checkbox" id="selectAll" class="select-all-checkbox" ${selectedConversations.size > 0 ? 'checked' : ''}>
           </th>
@@ -388,7 +388,7 @@ function displayConversations() {
       <tr data-id="${escapeHtml(conv.uuid)}">
         <td>
           <div class="conversation-name">
-            ${newUpdated ? '<span class="new-dot" title="New or updated since last export"></span>' : ''}
+            ${newUpdated ? `<span class="new-dot" title="${escapeHtml(t('New or updated since last export'))}"></span>` : ''}
             <a href="https://claude.ai/chat/${escapeHtml(conv.uuid)}" target="_blank" title="${escapeHtml(conv.name)}">
               ${escapeHtml(conv.name)}
             </a>
@@ -399,14 +399,14 @@ function displayConversations() {
         <td class="date">${escapeHtml(createdDate)}<br><span class="time">${escapeHtml(createdTime)}</span></td>
         <td>
           ${modelInfo.bounced
-            ? `<span class="model-cell" title="${modelInfo.otherLabel} ${escapeHtml(formatModelName(modelInfo.other))}"><span class="model-badge ${modelBadgeClass}">${escapeHtml(formatModelName(modelInfo.model))}</span><span class="model-bounced ${modelBadgeClass}">*</span></span>`
+            ? `<span class="model-cell" title="${escapeHtml(modelInfo.otherTitle(formatModelName(modelInfo.other)))}"><span class="model-badge ${modelBadgeClass}">${escapeHtml(formatModelName(modelInfo.model))}</span><span class="model-bounced ${modelBadgeClass}">*</span></span>`
             : `<span class="model-badge ${modelBadgeClass}">${escapeHtml(formatModelName(modelInfo.model))}</span>`
           }
         </td>
         <td>
           <div class="actions">
             <button class="btn-small btn-export" data-id="${escapeHtml(conv.uuid)}" data-name="${escapeHtml(conv.name)}">
-              Export
+              ${escapeHtml(t('Export'))}
             </button>
           </div>
         </td>
@@ -540,9 +540,9 @@ function updateExportButtonText() {
   if (!exportBtn) return;
 
   if (selectedConversations.size > 0) {
-    exportBtn.textContent = `Export Selected (${selectedConversations.size})`;
+    exportBtn.textContent = t('Export Selected ({0})', selectedConversations.size);
   } else {
-    exportBtn.textContent = 'Export All';
+    exportBtn.textContent = t('Export All');
   }
 }
 
@@ -550,7 +550,7 @@ function updateExportButtonText() {
 function updateStats() {
   const stats = document.getElementById('stats');
   const newCount = allConversations.filter(c => isNewOrUpdated(c)).length;
-  stats.textContent = `Showing ${filteredConversations.length} of ${allConversations.length} conversations (${newCount} new/updated)`;
+  stats.textContent = tn('Showing {0} of {n} conversation ({1} new/updated)', 'Showing {0} of {n} conversations ({1} new/updated)', allConversations.length, filteredConversations.length, newCount);
 }
 
 // Auto-select new/updated conversations
@@ -595,17 +595,21 @@ async function exportConversation(conversationId, conversationName) {
       return;
     }
 
-    showToast(`Exporting ${conversationName}...`);
+    showToast(t('Exporting {0}...', conversationName));
     const result = await exportConversationToFile(orgId, conversationId, readExportOptions(), conversationName);
     await refreshAfterExport();
     const extras = [];
-    if (result.artifactCount > 0) extras.push(`${result.artifactCount} artifact(s)`);
-    if (result.attachments.saved > 0) extras.push(`${result.attachments.saved} attachment(s)`);
-    const missing = result.attachments.missing > 0 ? ` (${result.attachments.missing} attachment(s) could not be downloaded)` : '';
-    showToast(`Exported: ${conversationName}${extras.length ? ` with ${extras.join(' and ')}` : ''}${missing}`, Boolean(missing), missing ? 8000 : 3000);
+    if (result.artifactCount > 0) extras.push(tn('{n} artifact', '{n} artifacts', result.artifactCount));
+    if (result.attachments.saved > 0) extras.push(tn('{n} attachment', '{n} attachments', result.attachments.saved));
+    const missing = result.attachments.missing > 0
+      ? tn('{n} attachment could not be downloaded', '{n} attachments could not be downloaded', result.attachments.missing)
+      : '';
+    let exported = extras.length ? t('Exported: {0} with {1}', conversationName, extras.join(', ')) : t('Exported: {0}', conversationName);
+    if (missing) exported += ` (${missing})`;
+    showToast(exported, Boolean(missing), missing ? 8000 : 3000);
   } catch (error) {
     console.error('Export error:', error);
-    showToast(`Failed to export: ${error.message}`, true);
+    showToast(t('Failed to export: {0}', error.message), true);
   }
 }
 
@@ -618,7 +622,7 @@ async function exportAllFiltered() {
     : filteredConversations;
 
   if (conversationsToExport.length === 0) {
-    showToast('No conversations to export', true);
+    showToast(t('No conversations to export'), true);
     return;
   }
 
@@ -640,17 +644,17 @@ async function exportAllFiltered() {
   const progressStats = document.getElementById('progressStats');
 
   button.disabled = true;
-  button.textContent = 'Preparing...';
+  button.textContent = t('Preparing...');
   progressBar.style.width = '0%';
   progressStats.textContent = '';
-  progressText.textContent = 'Preparing export...';
+  progressText.textContent = t('Preparing export...');
   progressModal.style.display = 'block';
 
   try {
     // One conversation: skip the ZIP when the result is a single file
     if (conversationsToExport.length === 1) {
       const conv = conversationsToExport[0];
-      progressText.textContent = `Exporting ${conv.name}...`;
+      progressText.textContent = t('Exporting {0}...', conv.name);
       await exportConversation(conv.uuid, conv.name);
       return;
     }
@@ -659,21 +663,21 @@ async function exportAllFiltered() {
     document.getElementById('cancelExport').onclick = () => {
       cancelled = true;
       progressModal.style.display = 'none';
-      showToast('Export cancelled', true);
+      showToast(t('Export cancelled'), true);
     };
 
-    progressText.textContent = `Exporting ${conversationsToExport.length} conversations...`;
+    progressText.textContent = tn('Exporting {n} conversation...', 'Exporting {n} conversations...', conversationsToExport.length);
 
     const result = await exportConversationsToZip(orgId, conversationsToExport, readExportOptions(), {
       isCancelled: () => cancelled,
       onProgress: (progress) => {
         if (progress.phase === 'zip') {
-          progressText.textContent = 'Creating ZIP file...';
+          progressText.textContent = t('Creating ZIP file...');
           progressBar.style.width = `${Math.round(progress.percent)}%`;
         } else {
           const done = progress.completed + progress.failed;
           progressBar.style.width = `${Math.round(done / progress.total * 100)}%`;
-          progressStats.textContent = `${progress.completed} succeeded, ${progress.failed} failed out of ${progress.total}`;
+          progressStats.textContent = t('{0} succeeded, {1} failed out of {2}', progress.completed, progress.failed, progress.total);
         }
       }
     });
@@ -682,18 +686,19 @@ async function exportAllFiltered() {
     await refreshAfterExport();
 
     if (result.included === 0) {
-      showToast('No artifacts found, so nothing was downloaded.', true);
+      showToast(t('No artifacts found, so nothing was downloaded.'), true);
     } else {
-      const attachments = result.attachments.saved > 0 ? `, with ${result.attachments.saved} attachment(s)` : '';
-      const missing = result.attachments.missing > 0 ? ` ${result.attachments.missing} attachment(s) could not be downloaded; see attachments.json.` : '';
-      const headline = result.failed > 0
-        ? `Exported ${result.completed} of ${result.total} conversations (${result.failed} failed)`
-        : `Successfully exported all ${result.completed} conversations`;
-      showToast(`${headline}${attachments}.${missing}`, Boolean(missing), missing ? 8000 : 3000);
+      const sentences = [result.failed > 0
+        ? t('Exported {0} of {1} conversations ({2} failed).', result.completed, result.total, result.failed)
+        : tn('Successfully exported {n} conversation.', 'Successfully exported all {n} conversations.', result.completed)];
+      if (result.attachments.saved > 0) sentences.push(tn('{n} attachment saved.', '{n} attachments saved.', result.attachments.saved));
+      const missing = result.attachments.missing > 0;
+      if (missing) sentences.push(tn('{n} attachment could not be downloaded; see attachments.json.', '{n} attachments could not be downloaded; see attachments.json.', result.attachments.missing));
+      showToast(sentences.join(' '), missing, missing ? 8000 : 3000);
     }
   } catch (error) {
     console.error('Export error:', error);
-    showToast(`Export failed: ${error.message}`, true);
+    showToast(t('Export failed: {0}', error.message), true);
   } finally {
     progressModal.style.display = 'none';
     button.disabled = false;
@@ -766,12 +771,12 @@ function setupEventListeners() {
         orgDisplay.title = orgId;
       } else {
         // No stored org ID — auto-detect will run on the next export action.
-        orgDisplay.textContent = '[Auto]';
-        orgDisplay.title = 'No manual org ID set; auto-detection runs on each export.';
+        orgDisplay.textContent = t('[Auto]');
+        orgDisplay.title = t('No manual org ID set; auto-detection runs on each export.');
       }
       // Update theme label
       const theme = document.documentElement.getAttribute('data-theme') || 'dark';
-      document.getElementById('themeLabel').textContent = theme === 'dark' ? 'Dark' : 'Light';
+      document.getElementById('themeLabel').textContent = theme === 'dark' ? t('Dark') : t('Light');
     }
   });
 
@@ -787,20 +792,20 @@ function setupEventListeners() {
   document.getElementById('themeToggle').addEventListener('click', () => {
     toggleTheme();
     const theme = document.documentElement.getAttribute('data-theme') || 'dark';
-    document.getElementById('themeLabel').textContent = theme === 'dark' ? 'Dark' : 'Light';
+    document.getElementById('themeLabel').textContent = theme === 'dark' ? t('Dark') : t('Light');
   });
 
   // Click org ID row to copy full ID to clipboard
   document.getElementById('settingsOrgId').addEventListener('click', async () => {
     if (!orgId) {
-      showToast('No org ID set', true);
+      showToast(t('No org ID set'), true);
       return;
     }
     try {
       await navigator.clipboard.writeText(orgId);
-      showToast('Org ID copied to clipboard');
+      showToast(t('Org ID copied to clipboard'));
     } catch (e) {
-      showToast('Failed to copy org ID', true);
+      showToast(t('Failed to copy org ID'), true);
     }
     settingsDropdown.classList.remove('open');
   });
@@ -821,7 +826,7 @@ function setupEventListeners() {
     await recordExportTimestamps(ids);
     await refreshAfterExport();
     settingsDropdown.classList.remove('open');
-    showToast(`Marked ${ids.length} conversations as exported`);
+    showToast(tn('Marked {n} conversation as exported', 'Marked {n} conversations as exported', ids.length));
   });
 
   // Mark all as new
@@ -832,7 +837,7 @@ function setupEventListeners() {
     autoSelectNewUpdated();
     updateStats();
     settingsDropdown.classList.remove('open');
-    showToast('All conversations marked as new');
+    showToast(t('All conversations marked as new'));
   });
 
   // Backup / Restore Database submenu — shared logic lives in utils.js
@@ -906,8 +911,8 @@ function setupEventListeners() {
       option.classList.add('selected');
       // Search bar placeholder reflects the active scope
       document.getElementById('searchInput').placeholder = statusFilter === 'projects'
-        ? 'Search projects by name...'
-        : 'Search conversations by name...';
+        ? t('Search projects by name...')
+        : t('Search conversations by name...');
       // Update button state
       filterBtn.classList.toggle('active', statusFilter !== 'all');
       filterDropdown.classList.remove('open');

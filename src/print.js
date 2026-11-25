@@ -89,17 +89,17 @@ async function runPrintJob() {
   const stored = await storageGet('local', ['printJob']);
   const job = stored.printJob;
   if (!job || !job.orgId) {
-    throw new Error('Nothing to print. Start a PDF export from the popup or the browse page.');
+    throw new Error(t('Nothing to print. Start a PDF export from the popup or the browse page.'));
   }
   chrome.storage.local.remove('printJob');
 
   const options = job.options || {};
   let conversations = job.conversations;
   if (!Array.isArray(conversations)) {
-    setStatus('Listing conversations...');
+    setStatus(t('Listing conversations...'));
     conversations = (await listConversations(job.orgId)).map((conv) => ({ uuid: conv.uuid, name: conv.name }));
   }
-  if (conversations.length === 0) throw new Error('No conversations to print.');
+  if (conversations.length === 0) throw new Error(t('No conversations to print.'));
 
   const content = document.getElementById('content');
   const renderer = createMarkdownRenderer();
@@ -119,7 +119,7 @@ async function runPrintJob() {
   }
 
   for (let i = 0; i < conversations.length; i += PRINT_BATCH_SIZE) {
-    setStatus(`Loading ${Math.min(i + PRINT_BATCH_SIZE, conversations.length)} of ${conversations.length}...`);
+    setStatus(t('Loading {0} of {1}...', Math.min(i + PRINT_BATCH_SIZE, conversations.length), conversations.length));
     const batch = conversations.slice(i, i + PRINT_BATCH_SIZE);
     const fetched = await Promise.all(batch.map((conv) => getConversation(job.orgId, conv.uuid).then(
       (data) => ({ conv, data }),
@@ -137,7 +137,7 @@ async function runPrintJob() {
         heading.textContent = title;
         const note = document.createElement('p');
         note.className = 'load-error';
-        note.textContent = `Could not load this conversation: ${error.message}`;
+        note.textContent = t('Could not load this conversation: {0}', error.message);
         article.append(heading, note);
       } else {
         data.model = inferModel(data);
@@ -174,11 +174,10 @@ async function runPrintJob() {
     ? firstTitle.textContent
     : `Conversations (${conversations.length})`;
 
-  const count = `${conversations.length} conversation${conversations.length === 1 ? '' : 's'}`;
   setStatus(
     failed > 0
-      ? `${count} loaded, ${failed} failed. Choose "Save as PDF" as the destination.`
-      : `${count} ready. Choose "Save as PDF" as the destination.`,
+      ? tn('{n} conversation loaded, {0} failed. Choose "Save as PDF" as the destination.', '{n} conversations loaded, {0} failed. Choose "Save as PDF" as the destination.', conversations.length, failed)
+      : tn('{n} conversation ready. Choose "Save as PDF" as the destination.', '{n} conversations ready. Choose "Save as PDF" as the destination.', conversations.length),
     failed > 0
   );
 

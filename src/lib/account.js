@@ -21,10 +21,12 @@ if (typeof module !== 'undefined' && module.exports && typeof collectProject ===
 
 // "12 projects and 840 other chats in 2 ZIP files; 3 problems, see manifest.json"
 function describeAccountExport(counts, partCount) {
-  const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
-  let text = `${plural(counts.projects, 'project')} and ${plural(counts.otherChats, 'other chat')} in ${plural(partCount, 'ZIP file')}`;
-  if (counts.problems > 0) text += `; ${plural(counts.problems, 'problem')}, see manifest.json`;
-  return text;
+  const text = t('{0} and {1} in {2}',
+    tn('{n} project', '{n} projects', counts.projects),
+    tn('{n} other chat', '{n} other chats', counts.otherChats),
+    tn('{n} ZIP file', '{n} ZIP files', partCount));
+  if (counts.problems === 0) return text;
+  return t('{0}; {1}', text, tn('{n} problem, see manifest.json', '{n} problems, see manifest.json', counts.problems));
 }
 
 // hooks: { onProgress({ label, percent }), isCancelled() }
@@ -44,7 +46,7 @@ async function exportEverything(orgId, projects, conversations, options, hooks) 
 
   const baseName = `downloadmythings-everything-${fileDateStamp()}`;
   const limit = typeof (options || {}).partLimitBytes === 'number' ? options.partLimitBytes : DMT_PART_LIMIT_BYTES;
-  const writer = createPartWriter(baseName, limit, (zipPercent) => report('Creating ZIP file...', zipPercent));
+  const writer = createPartWriter(baseName, limit, (zipPercent) => report(t('Creating ZIP file...'), zipPercent));
 
   const manifest = {
     app: typeof DMT_APP_ID === 'string' ? DMT_APP_ID : 'downloadmythings',
@@ -92,7 +94,7 @@ async function exportEverything(orgId, projects, conversations, options, hooks) 
   const usedNames = new Set();
   for (let i = 0; i < otherChats.length; i += DMT_BULK_BATCH_SIZE) {
     if (isCancelled()) return cancelled();
-    report(`Other chats ${Math.min(i + DMT_BULK_BATCH_SIZE, otherChats.length)} of ${otherChats.length}`, percent());
+    report(t('Other chats {0} of {1}', Math.min(i + DMT_BULK_BATCH_SIZE, otherChats.length), otherChats.length), percent());
 
     const fetched = await Promise.all(otherChats.slice(i, i + DMT_BULK_BATCH_SIZE).map((conv) => getConversation(orgId, conv.uuid).then(
       (data) => ({ conv, data }),

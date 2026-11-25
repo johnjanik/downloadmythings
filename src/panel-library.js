@@ -24,7 +24,7 @@ const library = {
 
 function libraryProjectNames() {
   const names = {};
-  for (const project of state.projects) names[project.uuid] = project.name || 'Untitled Project';
+  for (const project of state.projects) names[project.uuid] = project.name || t('Untitled Project');
   return names;
 }
 
@@ -34,21 +34,21 @@ function libraryWhen(value) {
   if (Number.isNaN(date.getTime())) return '';
   const now = new Date();
   if (date.toDateString() === now.toDateString()) {
-    return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    return date.toLocaleTimeString(dmtLocaleTag(), { hour: 'numeric', minute: '2-digit' });
   }
   const options = { month: 'short', day: 'numeric' };
   if (date.getFullYear() !== now.getFullYear()) options.year = 'numeric';
-  return date.toLocaleDateString([], options);
+  return date.toLocaleDateString(dmtLocaleTag(), options);
 }
 
 function updateLibraryBar() {
   const total = state.conversations.length;
   const shown = library.shown.length;
-  $('libraryCount').textContent = shown === total ? plural(total, 'chat') : `${shown} of ${plural(total, 'chat')}`;
+  $('libraryCount').textContent = shown === total ? countChats(total) : tn('{0} of {n} chat', '{0} of {n} chats', total, shown);
   $('librarySelectAll').checked = shown > 0 && library.shown.every((conv) => library.selected.has(conv.uuid));
   const button = $('libraryExport');
   button.disabled = library.selected.size === 0 || Boolean(state.job);
-  button.textContent = library.selected.size > 0 ? `Export selected (${library.selected.size})` : 'Export selected';
+  button.textContent = library.selected.size > 0 ? t('Export selected ({0})', library.selected.size) : t('Export selected');
   renderLibraryActions();
 }
 
@@ -62,9 +62,9 @@ function renderFolderFilter() {
   }
   const counts = folderChatCounts(state.folders, state.conversations);
   select.replaceChildren(
-    new Option(`All chats (${state.conversations.length})`, ''),
+    new Option(t('All chats ({0})', state.conversations.length), ''),
     ...folders.map((folder) => new Option(`${folder.name} (${counts[folder.id]})`, folder.id)),
-    new Option(`Not in a folder (${counts['']})`, 'none')
+    new Option(t('Not in a folder ({0})', counts['']), 'none')
   );
   select.value = library.folder;
 }
@@ -84,15 +84,15 @@ function renderLibraryActions() {
     return element;
   };
   const folderOptions = state.folders.folders.map((folder) => new Option(folder.name, `folder:${folder.id}`));
-  folderOptions.push(new Option('New folder...', 'folder:new'), new Option('Take out of its folder', 'folder:none'));
+  folderOptions.push(new Option(t('New folder...'), 'folder:new'), new Option(t('Take out of its folder'), 'folder:none'));
   const projectOptions = state.projects
     .slice()
     .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
-    .map((project) => new Option(project.name || 'Untitled Project', `project:${project.uuid}`));
+    .map((project) => new Option(project.name || t('Untitled Project'), `project:${project.uuid}`));
 
-  const children = [new Option(`With the ${plural(count, 'ticked chat')}...`, ''), group('Put in a folder', folderOptions)];
-  if (projectOptions.length > 0) children.push(group('Move to a project on claude.ai', projectOptions));
-  children.push(new Option('Delete from claude.ai...', 'delete'));
+  const children = [new Option(tn('With the {n} ticked chat...', 'With the {n} ticked chats...', count), ''), group(t('Put in a folder'), folderOptions)];
+  if (projectOptions.length > 0) children.push(group(t('Move to a project on claude.ai'), projectOptions));
+  children.push(new Option(t('Delete from claude.ai...'), 'delete'));
   select.replaceChildren(...children);
   select.value = '';
 }
@@ -142,12 +142,12 @@ function renderFoldersCard() {
     const projects = Object.entries(state.folders.projects).filter(([uuid, id]) => id === folder.id && known.has(uuid)).length;
     const meta = document.createElement('div');
     meta.className = 'meta';
-    meta.textContent = `${plural(chatCounts[folder.id], 'chat')}, ${plural(projects, 'project')}`;
+    meta.textContent = `${countChats(chatCounts[folder.id])}, ${countProjects(projects)}`;
     main.append(name, meta);
 
     const rename = document.createElement('button');
     rename.className = 'icon-btn';
-    rename.title = `Rename ${folder.name}`;
+    rename.title = t('Rename {0}', folder.name);
     rename.setAttribute('aria-label', rename.title);
     rename.textContent = '✎';
     rename.addEventListener('click', () => {
@@ -156,7 +156,7 @@ function renderFoldersCard() {
       field.type = 'text';
       field.maxLength = 60;
       field.value = folder.name;
-      field.setAttribute('aria-label', `New name for ${folder.name}`);
+      field.setAttribute('aria-label', t('New name for {0}', folder.name));
       let finished = false;
       const finish = async (save) => {
         if (finished) return;
@@ -184,13 +184,13 @@ function renderFoldersCard() {
 
     const remove = document.createElement('button');
     remove.className = 'icon-btn';
-    remove.title = `Delete the folder ${folder.name}`;
+    remove.title = t('Delete the folder {0}', folder.name);
     remove.setAttribute('aria-label', remove.title);
     remove.textContent = '×';
     remove.addEventListener('click', () => askToConfirm({
-      title: `Delete the folder "${folder.name}"?`,
-      text: `Its ${plural(chatCounts[folder.id], 'chat')} and ${plural(projects, 'project')} stay exactly as they are on claude.ai. They only leave this folder.`,
-      button: 'Delete folder',
+      title: t('Delete the folder "{0}"?', folder.name),
+      text: t('Its chats and projects stay exactly as they are on claude.ai. They only leave this folder.'),
+      button: t('Delete folder'),
       danger: true,
       go: () => saveFolderChange(removeFolder(state.folders, folder.id))
     }));
@@ -207,7 +207,7 @@ async function addFolderFromField() {
     let data = result.data;
     if (library.fileIntoNew && library.selected.size > 0) {
       data = assignToFolder(data, 'chats', [...library.selected], result.folder.id);
-      showNotice(`Put ${plural(library.selected.size, 'chat')} in "${result.folder.name}".`, 'info');
+      showNotice(tn('Put {n} chat in "{0}".', 'Put {n} chats in "{0}".', library.selected.size, result.folder.name), 'info');
     }
     library.fileIntoNew = false;
     field.value = '';
@@ -245,26 +245,28 @@ async function runLibraryAction(value) {
     const folderId = value === 'folder:none' ? null : value.slice('folder:'.length);
     const folder = state.folders.folders.find((item) => item.id === folderId);
     await saveFolderChange(assignToFolder(state.folders, 'chats', ids, folderId));
-    showNotice(folder ? `Put ${plural(ids.length, 'chat')} in "${folder.name}".` : `Took ${plural(ids.length, 'chat')} out of their folders.`, 'info');
+    showNotice(folder
+      ? tn('Put {n} chat in "{0}".', 'Put {n} chats in "{0}".', ids.length, folder.name)
+      : tn('Took {n} chat out of its folder.', 'Took {n} chats out of their folders.', ids.length), 'info');
     return;
   }
   if (value.startsWith('project:')) {
     const projectId = value.slice('project:'.length);
     const project = state.projects.find((item) => item.uuid === projectId);
-    const name = project ? (project.name || 'Untitled Project') : 'the project';
+    const name = project ? (project.name || t('Untitled Project')) : t('the project');
     askToConfirm({
-      title: `Move ${plural(ids.length, 'chat')} to "${name}"?`,
-      text: 'This changes your account on claude.ai: the chats will belong to that project and follow its instructions and files.',
-      button: `Move ${plural(ids.length, 'chat')}`,
+      title: tn('Move {n} chat to "{0}"?', 'Move {n} chats to "{0}"?', ids.length, name),
+      text: t('This changes your account on claude.ai: the chats will belong to that project and follow its instructions and files.'),
+      button: tn('Move {n} chat', 'Move {n} chats', ids.length),
       go: () => startJob({ type: 'move', ids, projectId, options: readOptions() })
     });
     return;
   }
   if (value === 'delete') {
     askToConfirm({
-      title: `Delete ${plural(ids.length, 'chat')} from claude.ai?`,
-      text: 'This removes them from your account for good. It cannot be undone, here or on claude.ai.',
-      button: `Delete ${plural(ids.length, 'chat')}`,
+      title: tn('Delete {n} chat from claude.ai?', 'Delete {n} chats from claude.ai?', ids.length),
+      text: t('This removes them from your account for good. It cannot be undone, here or on claude.ai.'),
+      button: tn('Delete {n} chat', 'Delete {n} chats', ids.length),
       danger: true,
       offerCopy: true,
       go: () => startJob({ type: 'delete', ids, copyFirst: $('confirmCopy').checked, options: readOptions() })
@@ -276,7 +278,7 @@ function setSearchStatus(text) {
   $('deepSearchOffer').hidden = library.deepSearch;
   $('deepSearchStatus').hidden = !library.deepSearch;
   if (text) $('deepSearchStatus').textContent = text;
-  $('librarySearch').placeholder = library.deepSearch ? 'Search every message' : 'Search chats by title or project';
+  $('librarySearch').placeholder = library.deepSearch ? t('Search every message') : t('Search chats by title or project');
 }
 
 function renderLibrary() {
@@ -311,7 +313,7 @@ function renderLibrary() {
     const checkbox = document.createElement('input');
     checkbox.type = 'checkbox';
     checkbox.checked = library.selected.has(conv.uuid);
-    checkbox.setAttribute('aria-label', `Select ${conv.name || 'this chat'}`);
+    checkbox.setAttribute('aria-label', conv.name ? t('Select {0}', conv.name) : t('Select this chat'));
     checkbox.addEventListener('change', () => {
       if (checkbox.checked) library.selected.add(conv.uuid);
       else library.selected.delete(conv.uuid);
@@ -325,10 +327,10 @@ function renderLibrary() {
     name.href = `https://claude.ai/chat/${encodeURIComponent(conv.uuid)}`;
     name.target = '_blank';
     name.rel = 'noopener noreferrer';
-    name.textContent = conv.name || 'Untitled conversation';
+    name.textContent = conv.name || t('Untitled conversation');
     main.appendChild(name);
     const folder = folderOf(state.folders, 'chats', conv.uuid);
-    const where = [projectOf(conv), folder ? `Folder: ${folder.name}` : ''].filter(Boolean).join(' · ');
+    const where = [projectOf(conv), folder ? t('Folder: {0}', folder.name) : ''].filter(Boolean).join(' · ');
     if (where) {
       const meta = document.createElement('div');
       meta.className = 'meta';
@@ -349,7 +351,7 @@ function renderLibrary() {
     when.className = 'when';
     when.textContent = libraryWhen(conv.updated_at);
 
-    row.append(checkbox, main, when, downloadIconButton(`Download ${conv.name || 'this chat'}`, () => saveChat(conv.uuid, conv.name)));
+    row.append(checkbox, main, when, downloadIconButton(conv.name ? t('Download {0}', conv.name) : t('Download this chat'), () => saveChat(conv.uuid, conv.name)));
     return row;
   }));
 
@@ -372,19 +374,19 @@ async function bringSearchIndexUpToDate() {
     }
     const waiting = staleConversations(conversations, library.index).length;
     if (waiting > 0) {
-      setSearchStatus(`Indexing ${conversations.length - waiting} / ${conversations.length} chats for search`);
+      setSearchStatus(t('Indexing {0} / {1} chats for search', conversations.length - waiting, conversations.length));
     }
     const result = await updateSearchIndex(state.orgId, conversations, library.index, {
-      onProgress: (done, total) => setSearchStatus(`Indexing ${done} / ${total} chats for search`),
+      onProgress: (done, total) => setSearchStatus(t('Indexing {0} / {1} chats for search', done, total)),
       shouldPause: () => Boolean(state.job)
     });
     library.indexedList = conversations;
     setSearchStatus(result.failed > 0
-      ? `Searching inside ${result.total - result.failed} of ${plural(result.total, 'chat')}. ${result.failed} could not be read.`
-      : `Searching inside all ${plural(result.total, 'chat')}.`);
+      ? tn('Searching inside {0} of {n} chat. {1} could not be read.', 'Searching inside {0} of {n} chats. {1} could not be read.', result.total, result.total - result.failed, result.failed)
+      : tn('Searching inside all {n} chat.', 'Searching inside all {n} chats.', result.total));
   } catch (error) {
     console.error('Search index failed:', error);
-    setSearchStatus(`The search index could not be updated: ${error.message}`);
+    setSearchStatus(t('The search index could not be updated: {0}', error.message));
   } finally {
     library.indexing = false;
   }
@@ -447,12 +449,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Search inside messages is opt-in: building the index reads every chat once
   const stored = await storageGet('local', ['deepSearch']);
   library.deepSearch = stored.deepSearch === true;
-  setSearchStatus(library.deepSearch ? 'Search inside messages is on.' : '');
+  setSearchStatus(library.deepSearch ? t('Search inside messages is on.') : '');
   $('enableDeepSearch').addEventListener('click', async (event) => {
     event.preventDefault();
     library.deepSearch = true;
     await storageSet('local', { deepSearch: true });
-    setSearchStatus('Preparing the search index...');
+    setSearchStatus(t('Preparing the search index...'));
     bringSearchIndexUpToDate();
   });
   document.querySelectorAll('.tab').forEach((tab) => tab.addEventListener('click', () => bringSearchIndexUpToDate()));
